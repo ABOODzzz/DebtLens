@@ -5,7 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalyzeInputType } from './analyzeInputType';
 
-export interface HealthStatus {
-  status: string;
+export interface AnalyzeInput {
+  type: AnalyzeInputType;
 }

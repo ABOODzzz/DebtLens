@@ -12,6 +12,10 @@ tags:
     description: Health operations
   - name: kyc
     description: KYC review operations
+  - name: content
+    description: Public content
+  - name: finance
+    description: Financial analysis operations
 paths:
   /healthz:
     get:
@@ -65,6 +69,206 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /headlines:
+    get:
+      operationId: getHeadlines
+      tags: [content]
+      summary: List news ticker headlines
+      responses:
+        "200":
+          description: Headlines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Headline"
+  /financial-summary:
+    get:
+      operationId: getFinancialSummary
+      tags: [finance]
+      summary: Compute a summary of the signed-in user's income and debts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Financial summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialSummary"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /analyze:
+    post:
+      operationId: analyzeFinances
+      tags: [finance]
+      summary: Run a transaction or full financial data analysis
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeInput"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /restructure:
+    post:
+      operationId: getRestructurePlan
+      tags: [finance]
+      summary: Generate a debt restructuring plan
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Restructuring plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestructureResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: No active loans to restructure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /advice:
+    post:
+      operationId: getAdvice
+      tags: [finance]
+      summary: Get AI-generated personalized financial advice
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: AI advice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdviceResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /consolidation-request:
+    post:
+      operationId: requestConsolidation
+      tags: [finance]
+      summary: Request loan consolidation across financing institutions
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Consolidation request recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsolidationRequestResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Fewer than 2 financing institutions on file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /ai-loan-assessment:
+    post:
+      operationId: assessLoanEligibility
+      tags: [finance]
+      summary: AI-assisted financing eligibility check
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Eligibility assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanEligibilityResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -110,5 +314,184 @@ components:
         - error
       properties:
         error:
+          type: string
+    Headline:
+      type: object
+      required:
+        - id
+        - text
+        - publishedAt
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        source:
+          type: ["string", "null"]
+        publishedAt:
+          type: string
+          format: date-time
+    FinancialSummary:
+      type: object
+      required:
+        - totalMonthlyIncome
+        - totalMonthlyDebtPayments
+        - totalRemainingDebt
+        - activeLoansCount
+        - financingInstitutionsCount
+        - debtToIncomeRatio
+        - hasActiveLoans
+        - hasMultipleFinancingInstitutions
+      properties:
+        totalMonthlyIncome:
+          type: number
+        totalMonthlyDebtPayments:
+          type: number
+        totalRemainingDebt:
+          type: number
+        activeLoansCount:
+          type: integer
+        financingInstitutionsCount:
+          type: integer
+        debtToIncomeRatio:
+          type: number
+        hasActiveLoans:
+          type: boolean
+        hasMultipleFinancingInstitutions:
+          type: boolean
+    AnalyzeInput:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [transactions, full]
+    DebtBreakdownItem:
+      type: object
+      required:
+        - lenderName
+        - remainingAmount
+        - startDate
+      properties:
+        lenderName:
+          type: string
+        remainingAmount:
+          type: number
+        startDate:
+          type: string
+        estimatedMonthlyBurden:
+          type: number
+    AnalyzeResult:
+      type: object
+      required:
+        - type
+        - summary
+        - debtBreakdown
+        - totalRemainingDebt
+        - debtToIncomeRatio
+        - insights
+      properties:
+        type:
+          type: string
+          enum: [transactions, full]
+        summary:
+          type: string
+        debtBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebtBreakdownItem"
+        totalRemainingDebt:
+          type: number
+        debtToIncomeRatio:
+          type: number
+        insights:
+          type: array
+          items:
+            type: string
+    RestructureStep:
+      type: object
+      required:
+        - lenderName
+        - action
+        - detail
+      properties:
+        lenderName:
+          type: string
+        action:
+          type: string
+        detail:
+          type: string
+    RestructureResult:
+      type: object
+      required:
+        - currentMonthlyBurden
+        - targetMonthlyBurden
+        - currentDebtToIncomeRatio
+        - targetDebtToIncomeRatio
+        - months
+        - steps
+      properties:
+        currentMonthlyBurden:
+          type: number
+        targetMonthlyBurden:
+          type: number
+        currentDebtToIncomeRatio:
+          type: number
+        targetDebtToIncomeRatio:
+          type: number
+        months:
+          type: integer
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestructureStep"
+    AdviceResult:
+      type: object
+      required:
+        - advice
+        - generatedAt
+      properties:
+        advice:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+    ConsolidationRequestResult:
+      type: object
+      required:
+        - id
+        - status
+        - estimatedConsolidatedMonthlyPayment
+        - institutionsIncluded
+        - createdAt
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [submitted]
+        estimatedConsolidatedMonthlyPayment:
+          type: number
+        institutionsIncluded:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    LoanEligibilityResult:
+      type: object
+      required:
+        - eligible
+        - eligibilityScore
+        - maxRecommendedAmount
+        - reasoning
+      properties:
+        eligible:
+          type: boolean
+        eligibilityScore:
+          type: integer
+        maxRecommendedAmount:
+          type: number
+        reasoning:
           type: string
 
