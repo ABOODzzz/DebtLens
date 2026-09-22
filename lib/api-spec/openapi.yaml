@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: kyc
+    description: KYC review operations
 paths:
   /healthz:
     get:
@@ -24,7 +26,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /kyc/submit:
+    post:
+      operationId: submitKyc
+      tags: [kyc]
+      summary: Submit a KYC profile for server-side review
+      description: Verifies the Firebase bearer token and returns a review status decided by the server.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycSubmitInput"
+      responses:
+        "200":
+          description: Review decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycSubmitResponse"
+        "400":
+          description: Invalid submission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Review service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +79,36 @@ components:
           type: string
       required:
         - status
+    KycSubmitInput:
+      type: object
+      required:
+        - profile
+        - photoPaths
+      properties:
+        profile:
+          type: object
+          additionalProperties: true
+        photoPaths:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: string
+    KycSubmitResponse:
+      type: object
+      required:
+        - reviewStatus
+      properties:
+        reviewStatus:
+          type: string
+          enum: [approved, pending, rejected]
+        reason:
+          type: ["string", "null"]
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
 
