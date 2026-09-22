@@ -105,7 +105,7 @@ export default function WizardPage() {
       // 2. Prepare profile object
       const fullProfile = {
         fullName: legalName,
-        nationalId: nationalId || undefined,
+        ...(nationalId ? { nationalId } : {}),
         hasBankAccount: hasBankAccount!,
         ...(hasBankAccount ? { 
           bankAccounts: bankAccounts 
@@ -140,16 +140,13 @@ export default function WizardPage() {
         }
       });
 
-      // 5. Update local state
+      // 5. Update local state. The server already persisted reviewStatus/reviewReason
+      // to Firestore via the Admin SDK (kyc/submit) — these are protected fields the
+      // client is not allowed to write directly under the Firestore security rules,
+      // so we only reflect the response locally here; reload reads it back from Firestore.
       setIsSubmitted(true);
       setReviewStatus(res.reviewStatus);
       setReviewReason(res.reason || null);
-
-      // We also update the firestore doc with the server's verdict to stay in sync
-      await updateDoc(doc(db, "users", user.uid), {
-        reviewStatus: res.reviewStatus,
-        reviewReason: res.reason || null
-      });
 
     } catch (error) {
       console.error("Submission failed", error);
