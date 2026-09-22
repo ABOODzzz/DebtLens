@@ -1,0 +1,1 @@
+- [Firebase Storage rules via REST](firebase-storage-rules-deploy.md) — deploy security rules programmatically with the service account, no Firebase CLI/login needed.
