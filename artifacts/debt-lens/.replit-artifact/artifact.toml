@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "DebtLens"
+description = "An Arabic RTL financial wellness app for people in Jordan to understand their income, bank accounts, and debt across lending companies and payment apps."
+version = "1.0.0"
+id = "artifacts/debt-lens"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25675
+
+[services.development]
+run = "pnpm --filter @workspace/debt-lens run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/debt-lens", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/debt-lens/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25675"
+BASE_PATH = "/"
