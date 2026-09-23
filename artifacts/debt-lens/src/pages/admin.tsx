@@ -4,12 +4,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, UserCheck, UserX, AlertCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
   const usersQuery = useListAdminUsers();
   const decisionMutation = useSubmitKycDecision();
   const [pendingUid, setPendingUid] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const handleDecision = async (uid: string, decision: "approved" | "rejected") => {
     setPendingUid(uid);
@@ -18,6 +20,11 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: getListAdminUsersQueryKey() });
     } catch (error) {
       console.error("Error updating KYC decision", error);
+      toast({
+        variant: "destructive",
+        title: "فشل حفظ القرار",
+        description: "تعذر تحديث حالة المستخدم. يرجى المحاولة مرة أخرى.",
+      });
     } finally {
       setPendingUid(null);
     }
