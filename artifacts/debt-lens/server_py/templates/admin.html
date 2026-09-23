@@ -12,6 +12,17 @@
   .row-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .row-actions button { padding: 0.35rem 0.7rem; font-size: 0.82rem; }
   .insight-box { white-space: pre-wrap; background: #f5f7f9; border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.85rem; display: none; }
+  .panel-box { display: none; background: #f5f7f9; border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; }
+  .panel-box .field-row { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; }
+  .panel-box label { font-size: 0.8rem; color: #5a6b7f; font-weight: 600; }
+  .panel-box input[type="text"], .panel-box select, .panel-box textarea, .panel-box input[type="file"] {
+    width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #dbe2e8; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;
+  }
+  .panel-box textarea { min-height: 4.5rem; font-family: inherit; }
+  .panel-box .panel-error { color: #b3261e; font-size: 0.8rem; display: none; }
+  .letter-output { white-space: pre-wrap; background: #fff; border: 1px solid #dbe2e8; border-radius: 6px; padding: 0.6rem; margin-top: 0.5rem; font-size: 0.83rem; min-height: 6rem; display: none; }
+  .stmt-result { white-space: pre-wrap; background: #fff; border: 1px solid #dbe2e8; border-radius: 6px; padding: 0.6rem; margin-top: 0.5rem; font-size: 0.83rem; display: none; }
+  #portfolio-summary-box { white-space: pre-wrap; background: #f5f7f9; border-radius: 8px; padding: 0.85rem; margin-top: 0.75rem; font-size: 0.88rem; display: none; }
 </style>
 {% endblock %}
 {% block header_extra %}
@@ -42,9 +53,13 @@
 </div>
 {% else %}
 <div class="card">
-  <h2 style="margin-top:0; font-size:1.1rem;">المستخدمون وطلبات مراجعة الهوية</h2>
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+    <h2 style="margin:0; font-size:1.1rem;">المستخدمون وطلبات مراجعة الهوية</h2>
+    <button id="prioritize-btn" class="btn btn-outline">ترتيب أولويات المراجعة المعلّقة</button>
+  </div>
   <p class="muted" id="users-summary">جارٍ التحميل...</p>
   <p id="users-error" class="badge badge-warn" style="display:none;"></p>
+  <div id="portfolio-summary-box"></div>
   <div style="overflow-x:auto;">
     <table class="admin-table" id="users-table" style="display:none;">
       <thead>
@@ -110,19 +125,76 @@
       : '<span class="badge badge-none">لا</span>';
 
     const canDecide = u.has_kyc_submission;
+    const uid = u.uid;
     const actions = `
       <div class="row-actions">
-        <button class="btn btn-outline insight-btn" data-uid="${u.uid}">تحليل المخاطر</button>
-        ${canDecide ? `<button class="btn approve-btn" data-uid="${u.uid}">موافقة</button>` : ""}
-        ${canDecide ? `<button class="btn btn-outline reject-btn" data-uid="${u.uid}">رفض</button>` : ""}
+        <button class="btn btn-outline insight-btn" data-uid="${uid}">تحليل المخاطر</button>
+        <button class="btn btn-outline statement-toggle-btn" data-uid="${uid}">رفع كشف حساب</button>
+        <button class="btn btn-outline institution-toggle-btn" data-uid="${uid}">خطاب لجهة تمويل</button>
+        <button class="btn btn-outline bank-toggle-btn" data-uid="${uid}">خطاب لبنك</button>
+        ${canDecide ? `<button class="btn approve-btn" data-uid="${uid}">موافقة</button>` : ""}
+        ${canDecide ? `<button class="btn btn-outline reject-btn" data-uid="${uid}">رفض</button>` : ""}
       </div>
-      <div class="insight-box" id="insight-${u.uid}"></div>
+      <div class="insight-box" id="insight-${uid}"></div>
+
+      <div class="panel-box" id="statement-panel-${uid}">
+        <div class="field-row">
+          <label>اسم الجهة (البنك/شركة التمويل)</label>
+          <input type="text" id="stmt-institution-${uid}" placeholder="مثال: بنك الإسكان">
+        </div>
+        <div class="field-row">
+          <label>نوع الكشف</label>
+          <select id="stmt-type-${uid}">
+            <option value="bank">كشف حساب بنكي</option>
+            <option value="financing">كشف قرض/تمويل</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <label>ملف الكشف (PDF أو صورة)</label>
+          <input type="file" id="stmt-file-${uid}" accept="application/pdf,image/png,image/jpeg,image/webp,image/gif">
+        </div>
+        <button class="btn stmt-submit-btn" data-uid="${uid}">تحليل ورفع الكشف</button>
+        <p class="panel-error" id="stmt-error-${uid}"></p>
+        <div class="stmt-result" id="stmt-result-${uid}"></div>
+      </div>
+
+      <div class="panel-box" id="institution-panel-${uid}">
+        <div class="field-row">
+          <label>اسم جهة التمويل</label>
+          <input type="text" id="inst-name-${uid}" placeholder="مثال: شركة التمويل الأولى">
+        </div>
+        <div class="field-row">
+          <label>تفاصيل إضافية (اختياري)</label>
+          <textarea id="inst-details-${uid}" placeholder="أي تفاصيل يجب ذكرها في الخطاب"></textarea>
+        </div>
+        <button class="btn inst-submit-btn" data-uid="${uid}">صياغة الخطاب</button>
+        <p class="panel-error" id="inst-error-${uid}"></p>
+        <textarea class="letter-output" id="inst-letter-${uid}" readonly></textarea>
+        <button class="btn btn-outline copy-btn" data-target="inst-letter-${uid}" id="inst-copy-${uid}" style="display:none; margin-top:0.4rem;">نسخ الخطاب</button>
+      </div>
+
+      <div class="panel-box" id="bank-panel-${uid}">
+        <div class="field-row">
+          <label>اسم البنك</label>
+          <input type="text" id="bank-name-${uid}" placeholder="مثال: البنك العربي">
+        </div>
+        <div class="field-row">
+          <label>الحسابات المطلوبة (حساب واحد في كل سطر)</label>
+          <textarea id="bank-accounts-${uid}" placeholder="مثال:&#10;حساب جاري رقم 12345&#10;حساب توفير رقم 67890"></textarea>
+        </div>
+        <button class="btn bank-submit-btn" data-uid="${uid}">صياغة الخطاب</button>
+        <p class="panel-error" id="bank-error-${uid}"></p>
+        <textarea class="letter-output" id="bank-letter-${uid}" readonly></textarea>
+        <button class="btn btn-outline copy-btn" data-target="bank-letter-${uid}" id="bank-copy-${uid}" style="display:none; margin-top:0.4rem;">نسخ الخطاب</button>
+      </div>
     `;
 
     const tr = document.createElement("tr");
+    tr.dataset.uid = uid;
+    tr.dataset.reviewStatus = u.review_status;
     tr.innerHTML = `
       <td>${u.name || "—"}</td>
-      <td><code style="font-size:0.75rem;">${u.uid}</code></td>
+      <td><code style="font-size:0.75rem;">${uid}</code></td>
       <td><span class="badge ${cls}">${label}</span></td>
       <td>${u.data_source}</td>
       <td>${dti}</td>
@@ -130,6 +202,12 @@
       <td>${actions}</td>
     `;
     return tr;
+  }
+
+  function togglePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    panel.style.display = panel.style.display === "block" ? "none" : "block";
   }
 
   async function loadUsers() {
@@ -155,8 +233,211 @@
   }
 
   document.addEventListener("click", async (event) => {
+    if (event.target.classList.contains("copy-btn")) {
+      const targetId = event.target.dataset.target;
+      const box = document.getElementById(targetId);
+      if (box) {
+        try {
+          await navigator.clipboard.writeText(box.value);
+          const original = event.target.textContent;
+          event.target.textContent = "تم النسخ";
+          setTimeout(() => { event.target.textContent = original; }, 1500);
+        } catch (error) {
+          alert("تعذّر نسخ النص تلقائيًا. الرجاء تحديد النص ونسخه يدويًا.");
+        }
+      }
+      return;
+    }
+
+    if (event.target.id === "prioritize-btn") {
+      const box = document.getElementById("portfolio-summary-box");
+      const pendingUids = Array.from(document.querySelectorAll('tr[data-review-status="pending"]')).map(
+        (tr) => tr.dataset.uid
+      );
+      if (!pendingUids.length) {
+        box.style.display = "block";
+        box.textContent = "لا يوجد مستخدمون بانتظار المراجعة حاليًا.";
+        return;
+      }
+      event.target.disabled = true;
+      const originalLabel = event.target.textContent;
+      event.target.textContent = "جارٍ الترتيب...";
+      box.style.display = "block";
+      box.textContent = "جارٍ تحليل الأولويات...";
+      try {
+        const result = await authedFetch("/api/admin/portfolio-summary", {
+          method: "POST",
+          body: JSON.stringify({ uids: pendingUids }),
+        });
+        box.textContent = result.ranked_summary;
+      } catch (error) {
+        box.textContent = error.message || "تعذّر توليد ترتيب الأولويات.";
+      } finally {
+        event.target.disabled = false;
+        event.target.textContent = originalLabel;
+      }
+      return;
+    }
+
     const uid = event.target.dataset.uid;
     if (!uid) return;
+
+    if (event.target.classList.contains("statement-toggle-btn")) {
+      togglePanel(`statement-panel-${uid}`);
+      return;
+    }
+    if (event.target.classList.contains("institution-toggle-btn")) {
+      togglePanel(`institution-panel-${uid}`);
+      return;
+    }
+    if (event.target.classList.contains("bank-toggle-btn")) {
+      togglePanel(`bank-panel-${uid}`);
+      return;
+    }
+
+    if (event.target.classList.contains("stmt-submit-btn")) {
+      const errorBox = document.getElementById(`stmt-error-${uid}`);
+      const resultBox = document.getElementById(`stmt-result-${uid}`);
+      const institutionName = document.getElementById(`stmt-institution-${uid}`).value.trim();
+      const institutionType = document.getElementById(`stmt-type-${uid}`).value;
+      const fileInput = document.getElementById(`stmt-file-${uid}`);
+      const file = fileInput.files[0];
+
+      errorBox.style.display = "none";
+      resultBox.style.display = "none";
+
+      if (!institutionName) {
+        errorBox.textContent = "الرجاء إدخال اسم الجهة.";
+        errorBox.style.display = "block";
+        return;
+      }
+      if (!file) {
+        errorBox.textContent = "الرجاء اختيار ملف الكشف.";
+        errorBox.style.display = "block";
+        return;
+      }
+
+      event.target.disabled = true;
+      const originalLabel = event.target.textContent;
+      event.target.textContent = "جارٍ التحليل...";
+
+      try {
+        const formData = new FormData();
+        formData.append("uid", uid);
+        formData.append("institution_name", institutionName);
+        formData.append("institution_type", institutionType);
+        formData.append("file", file);
+
+        const res = await fetch("/api/admin/analyze-statement-upload", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${idToken}` },
+          body: formData,
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.detail || `طلب فشل بالحالة ${res.status}`);
+        }
+        const data = await res.json();
+        resultBox.style.display = "block";
+        resultBox.textContent =
+          `تم تحليل كشف ${data.institution_name} (${institutionType === "bank" ? "بنكي" : "تمويل"}) بنجاح.\n` +
+          `عدد الحركات: ${data.transaction_count}\n` +
+          (institutionType === "financing"
+            ? `المبلغ الأصلي: ${data.principal_amount} | الرصيد المتبقي: ${data.remaining_balance} | القسط الشهري: ${data.monthly_installment}\n`
+            : `إجمالي الإيداعات: ${data.derived.summary.total_credits} | إجمالي السحوبات: ${data.derived.summary.total_debits}\n`) +
+          `تم حفظ الكشف في ملف المستخدم.`;
+        fileInput.value = "";
+        await loadUsers();
+      } catch (error) {
+        errorBox.textContent = error.message || "تعذّر تحليل الكشف.";
+        errorBox.style.display = "block";
+      } finally {
+        event.target.disabled = false;
+        event.target.textContent = originalLabel;
+      }
+      return;
+    }
+
+    if (event.target.classList.contains("inst-submit-btn")) {
+      const errorBox = document.getElementById(`inst-error-${uid}`);
+      const letterBox = document.getElementById(`inst-letter-${uid}`);
+      const copyBtn = document.getElementById(`inst-copy-${uid}`);
+      const institutionName = document.getElementById(`inst-name-${uid}`).value.trim();
+      const details = document.getElementById(`inst-details-${uid}`).value.trim();
+
+      errorBox.style.display = "none";
+
+      if (!institutionName) {
+        errorBox.textContent = "الرجاء إدخال اسم الجهة.";
+        errorBox.style.display = "block";
+        return;
+      }
+
+      event.target.disabled = true;
+      const originalLabel = event.target.textContent;
+      event.target.textContent = "جارٍ الصياغة...";
+      try {
+        const data = await authedFetch("/api/admin/institution-request", {
+          method: "POST",
+          body: JSON.stringify({ uid, institution_name: institutionName, request_details: details || null }),
+        });
+        letterBox.value = data.letter;
+        letterBox.style.display = "block";
+        copyBtn.style.display = "inline-block";
+      } catch (error) {
+        errorBox.textContent = error.message || "تعذّر صياغة الخطاب.";
+        errorBox.style.display = "block";
+      } finally {
+        event.target.disabled = false;
+        event.target.textContent = originalLabel;
+      }
+      return;
+    }
+
+    if (event.target.classList.contains("bank-submit-btn")) {
+      const errorBox = document.getElementById(`bank-error-${uid}`);
+      const letterBox = document.getElementById(`bank-letter-${uid}`);
+      const copyBtn = document.getElementById(`bank-copy-${uid}`);
+      const bankName = document.getElementById(`bank-name-${uid}`).value.trim();
+      const accountsRaw = document.getElementById(`bank-accounts-${uid}`).value;
+      const bankAccounts = accountsRaw
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      errorBox.style.display = "none";
+
+      if (!bankName) {
+        errorBox.textContent = "الرجاء إدخال اسم البنك.";
+        errorBox.style.display = "block";
+        return;
+      }
+      if (!bankAccounts.length) {
+        errorBox.textContent = "الرجاء إدخال حساب واحد على الأقل.";
+        errorBox.style.display = "block";
+        return;
+      }
+
+      event.target.disabled = true;
+      const originalLabel = event.target.textContent;
+      event.target.textContent = "جارٍ الصياغة...";
+      try {
+        const data = await authedFetch("/api/admin/bank-request", {
+          method: "POST",
+          body: JSON.stringify({ uid, bank_name: bankName, bank_accounts: bankAccounts }),
+        });
+        letterBox.value = data.letter;
+        letterBox.style.display = "block";
+        copyBtn.style.display = "inline-block";
+      } catch (error) {
+        errorBox.textContent = error.message || "تعذّر صياغة الخطاب (تأكد من وجود صورة هوية للمستخدم).";
+        errorBox.style.display = "block";
+      } finally {
+        event.target.disabled = false;
+        event.target.textContent = originalLabel;
+      }
+      return;
+    }
 
     if (event.target.classList.contains("approve-btn") || event.target.classList.contains("reject-btn")) {
       const decision = event.target.classList.contains("approve-btn") ? "approved" : "rejected";

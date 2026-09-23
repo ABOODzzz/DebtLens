@@ -47,7 +47,10 @@ try:
     else:
         service_account_info = json.loads(raw_service_account)
         cred = credentials.Certificate(service_account_info)
-        firebase_app = firebase_admin.initialize_app(cred)
+        storage_bucket = os.environ.get("VITE_FIREBASE_STORAGE_BUCKET")
+        firebase_app = firebase_admin.initialize_app(
+            cred, options={"storageBucket": storage_bucket} if storage_bucket else None
+        )
         firebase_auth = firebase_auth_module
         FIREBASE_ENABLED = True
         logger.info("Firebase Admin SDK initialized successfully.")
@@ -84,6 +87,30 @@ def get_firestore_client():
         _firestore_client = firestore.client(app=firebase_app)
 
     return _firestore_client
+
+
+_storage_bucket = None
+
+
+def get_storage_bucket():
+    """
+    Return a lazily-created Firebase Storage bucket handle. Raises
+    FirebaseUnavailableError if Firebase Admin isn't configured -- callers
+    should translate that into a 503, not a missing-data 404.
+    """
+    global _storage_bucket
+
+    if not FIREBASE_ENABLED or firebase_app is None:
+        raise FirebaseUnavailableError(
+            "Firebase Admin SDK is not configured; cannot reach Storage."
+        )
+
+    if _storage_bucket is None:
+        from firebase_admin import storage as firebase_storage
+
+        _storage_bucket = firebase_storage.bucket(app=firebase_app)
+
+    return _storage_bucket
 
 
 # ---------------------------------------------------------------------------

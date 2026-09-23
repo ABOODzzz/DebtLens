@@ -23,14 +23,20 @@ import base64
 import json
 import logging
 import re
+from datetime import timedelta
 from typing import Literal
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from anthropic_client import ANTHROPIC_MODEL, anthropic_client
-from firebase_client import FirebaseUnavailableError, get_current_admin, get_firestore_client
+from firebase_client import (
+    FirebaseUnavailableError,
+    get_current_admin,
+    get_firestore_client,
+    get_storage_bucket,
+)
 from user_data import get_user_financial_profile
 
 logger = logging.getLogger("debtlens")
@@ -393,6 +399,109 @@ def _sanitize_institution_key(name: str) -> str:
     return cleaned or "institution"
 
 
+def _finalize_statement(
+    admin_uid: str,
+    uid: str,
+    institution_name: str,
+    institution_type: str,
+    raw_data: dict,
+    file_url: str | None,
+) -> dict:
+    """
+    Shared tail end of statement processing: validate/normalize the
+    AI-extracted data, compute chart-ready derived fields, persist the
+    statement + audit log entry to Firestore, and return the API payload.
+    Used by both the URL-based and direct-upload analyze-statement routes.
+    """
+    if institution_type == "bank":
+        transactions = _validate_bank_transactions(raw_data)
+        derived = _compute_bank_derived(transactions)
+        loan_fields = {
+            "principalAmount": 0.0,
+            "monthlyInstallment": 0.0,
+            "remainingBalance": 0.0,
+            "interestRate": None,
+            "startDate": None,
+            "endDate": None,
+            "paymentStatus": None,
+        }
+    else:
+        financing_data = _validate_financing_data(raw_data)
+        transactions = financing_data["transactions"]
+        derived = _compute_financing_derived(transactions)
+        loan_fields = {
+            "principalAmount": financing_data["principal_amount"],
+            "monthlyInstallment": financing_data["monthly_installment"],
+            "remainingBalance": financing_data["remaining_balance"],
+            "interestRate": financing_data["interest_rate"],
+            "startDate": financing_data["start_date"],
+            "endDate": financing_data["end_date"],
+            "paymentStatus": financing_data["payment_status"],
+        }
+
+    institution_key = _sanitize_institution_key(institution_name)
+
+    try:
+        db = get_firestore_client()
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach the database right now. Please try again shortly.",
+        ) from exc
+
+    from firebase_admin import firestore
+
+    statement_record = {
+        "institutionName": institution_name,
+        "statementType": institution_type,
+        "fileUrl": file_url,
+        "transactions": transactions,
+        "derived": derived,
+        "analyzedAt": firestore.SERVER_TIMESTAMP,
+        **loan_fields,
+    }
+
+    user_doc_ref = db.collection("users").document(uid)
+    user_doc_ref.set(
+        {
+            "statements": {institution_key: statement_record},
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    user_doc_ref.collection("statementAuditLog").add(
+        {
+            "adminUid": admin_uid,
+            "targetUid": uid,
+            "institutionName": institution_name,
+            "institutionKey": institution_key,
+            "institutionType": institution_type,
+            "fileUrl": file_url,
+            "transactionCount": len(transactions),
+            "summary": derived["summary"],
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        }
+    )
+
+    return {
+        "institution_key": institution_key,
+        "institution_name": institution_name,
+        "institution_type": institution_type,
+        "file_url": file_url,
+        "principal_amount": loan_fields["principalAmount"],
+        "monthly_installment": loan_fields["monthlyInstallment"],
+        "remaining_balance": loan_fields["remainingBalance"],
+        "interest_rate": loan_fields["interestRate"],
+        "start_date": loan_fields["startDate"],
+        "end_date": loan_fields["endDate"],
+        "payment_status": loan_fields["paymentStatus"],
+        "transaction_count": len(transactions),
+        "transactions": transactions,
+        "derived": derived,
+    }
+
+
 @router.post("/analyze-statement")
 def analyze_statement(body: AnalyzeStatementRequest, admin: dict = Depends(get_current_admin)):
     if anthropic_client is None:
@@ -425,92 +534,90 @@ def analyze_statement(body: AnalyzeStatementRequest, admin: dict = Depends(get_c
             detail="Failed to extract structured data from the statement.",
         ) from exc
 
-    if body.institution_type == "bank":
-        transactions = _validate_bank_transactions(raw_data)
-        derived = _compute_bank_derived(transactions)
-        loan_fields = {
-            "principalAmount": 0.0,
-            "monthlyInstallment": 0.0,
-            "remainingBalance": 0.0,
-            "interestRate": None,
-            "startDate": None,
-            "endDate": None,
-            "paymentStatus": None,
-        }
-    else:
-        financing_data = _validate_financing_data(raw_data)
-        transactions = financing_data["transactions"]
-        derived = _compute_financing_derived(transactions)
-        loan_fields = {
-            "principalAmount": financing_data["principal_amount"],
-            "monthlyInstallment": financing_data["monthly_installment"],
-            "remainingBalance": financing_data["remaining_balance"],
-            "interestRate": financing_data["interest_rate"],
-            "startDate": financing_data["start_date"],
-            "endDate": financing_data["end_date"],
-            "paymentStatus": financing_data["payment_status"],
-        }
+    return _finalize_statement(
+        admin["uid"], body.uid, body.institution_name, body.institution_type, raw_data, body.file_url
+    )
 
-    institution_key = _sanitize_institution_key(body.institution_name)
 
-    try:
-        db = get_firestore_client()
-    except FirebaseUnavailableError as exc:
+_ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_EXTENSION_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
+def _guess_upload_media_type(filename: str, content_type: str | None) -> str | None:
+    if content_type == "application/pdf" or content_type in _ALLOWED_IMAGE_TYPES:
+        return content_type
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return _EXTENSION_MEDIA_TYPES.get(ext)
+
+
+@router.post("/analyze-statement-upload")
+async def analyze_statement_upload(
+    uid: str = Form(...),
+    institution_name: str = Form(...),
+    institution_type: Literal["bank", "financing"] = Form(...),
+    file: UploadFile = File(...),
+    admin: dict = Depends(get_current_admin),
+):
+    """
+    Same outcome as /analyze-statement, but for admins uploading a statement
+    file straight from their machine instead of linking an existing URL. The
+    file is analyzed directly, then archived to Firebase Storage for the
+    record; storage failures are logged but never block the analysis.
+    """
+    if anthropic_client is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to reach the database right now. Please try again shortly.",
+            detail="Statement analysis is currently unavailable.",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes or len(file_bytes) > _MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is empty or exceeds the 32 MB limit.",
+        )
+
+    media_type = _guess_upload_media_type(file.filename or "", file.content_type)
+    if media_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type. Please upload a PDF or an image (PNG/JPEG/WEBP/GIF).",
+        )
+
+    file_block = _file_content_block(file_bytes, media_type)
+
+    try:
+        raw_data = _extract_statement_data(file_block, institution_type)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Statement extraction failed for uid=%s institution=%s: %s", uid, institution_name, exc
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to extract structured data from the statement.",
         ) from exc
 
-    from firebase_admin import firestore
+    file_url: str | None = None
+    try:
+        bucket = get_storage_bucket()
+        safe_name = re.sub(r"[^\w.\-]+", "_", file.filename or "statement", flags=re.UNICODE)
+        blob_path = f"admin-statements/{uid}/{_sanitize_institution_key(institution_name)}-{safe_name}"
+        blob = bucket.blob(blob_path)
+        blob.upload_from_string(file_bytes, content_type=media_type)
+        file_url = blob.generate_signed_url(version="v4", expiration=timedelta(days=7))
+    except FirebaseUnavailableError:
+        logger.warning("Storage unavailable; statement for uid=%s was analyzed but not archived.", uid)
+    except Exception as exc:  # noqa: BLE001 - archival is best-effort, never blocks analysis
+        logger.warning("Failed to archive uploaded statement for uid=%s: %s", uid, exc)
 
-    statement_record = {
-        "institutionName": body.institution_name,
-        "statementType": body.institution_type,
-        "fileUrl": body.file_url,
-        "transactions": transactions,
-        "derived": derived,
-        "analyzedAt": firestore.SERVER_TIMESTAMP,
-        **loan_fields,
-    }
-
-    user_doc_ref = db.collection("users").document(body.uid)
-    user_doc_ref.set(
-        {
-            "statements": {institution_key: statement_record},
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )
-
-    user_doc_ref.collection("statementAuditLog").add(
-        {
-            "adminUid": admin["uid"],
-            "targetUid": body.uid,
-            "institutionName": body.institution_name,
-            "institutionKey": institution_key,
-            "institutionType": body.institution_type,
-            "fileUrl": body.file_url,
-            "transactionCount": len(transactions),
-            "summary": derived["summary"],
-            "createdAt": firestore.SERVER_TIMESTAMP,
-        }
-    )
-
-    return {
-        "institution_key": institution_key,
-        "institution_name": body.institution_name,
-        "institution_type": body.institution_type,
-        "principal_amount": loan_fields["principalAmount"],
-        "monthly_installment": loan_fields["monthlyInstallment"],
-        "remaining_balance": loan_fields["remainingBalance"],
-        "interest_rate": loan_fields["interestRate"],
-        "start_date": loan_fields["startDate"],
-        "end_date": loan_fields["endDate"],
-        "payment_status": loan_fields["paymentStatus"],
-        "transaction_count": len(transactions),
-        "transactions": transactions,
-        "derived": derived,
-    }
+    return _finalize_statement(admin["uid"], uid, institution_name, institution_type, raw_data, file_url)
 
 
 # ---------------------------------------------------------------------------
