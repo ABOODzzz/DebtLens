@@ -138,6 +138,19 @@ def _extract_response_text(message) -> str:
     return "\n".join(parts).strip()
 
 
+def _stream_statement_message(prompt: str, file_block: dict) -> object:
+    """Large output budgets require Anthropic's streaming API, not messages.create."""
+    with anthropic_client.messages.stream(
+        model=ANTHROPIC_MODEL,
+        max_tokens=_STATEMENT_MAX_TOKENS,
+        messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, file_block]}],
+    ) as stream:
+        message = stream.get_final_message()
+    if message.stop_reason == "max_tokens":
+        raise ValueError("Statement extraction reached the output limit; result is incomplete.")
+    return message
+
+
 # ---------------------------------------------------------------------------
 # JSON parsing with a Claude-powered repair pass
 # ---------------------------------------------------------------------------
@@ -228,11 +241,7 @@ def _financing_statement_prompt() -> str:
 def _extract_statement_data(file_block: dict, institution_type: str) -> dict:
     prompt_text = _bank_statement_prompt() if institution_type == "bank" else _financing_statement_prompt()
 
-    message = anthropic_client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=_STATEMENT_MAX_TOKENS,
-        messages=[{"role": "user", "content": [{"type": "text", "text": prompt_text}, file_block]}],
-    )
+    message = _stream_statement_message(prompt_text, file_block)
     text = _extract_response_text(message)
 
     data = _try_parse_json(text)

@@ -10,3 +10,4 @@
 - [Guarantor decision history](debtlens-guarantor-decision-history.md) — append final admin decisions atomically and expose normalized chronological entries to reviewers.
 - [DebtLens i18n architecture](debtlens-i18n-architecture.md) — custom Arabic/English i18n (no library): per-page dictionaries + dot-path `t()`; lenders.ts already bilingual.
 - [DebtLens manual-obligation analysis](debtlens-manual-obligation-analysis.md) — no synthetic credit data; customers without bank accounts are assessed from declared income minus recurring obligations.
+- [Anthropic long statement responses](debtlens-anthropic-long-responses.md) — large extraction budgets require streaming; reject output-limit truncation before saving financial data.
