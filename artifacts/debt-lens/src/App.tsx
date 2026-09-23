@@ -26,8 +26,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Login is intentionally decoupled from the profile-completion wizard: the
+// wizard only ever runs once, right after account creation. An existing
+// user who logs in -- complete profile or not -- always lands on their
+// destination (dashboard/admin) directly, never bounced back to the wizard.
 function ProtectedRoute({ component: Component, adminOnly = false }: { component: React.ComponentType, adminOnly?: boolean }) {
-  const { user, loading, isAdmin, profile } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const [_, setLocation] = useLocation();
 
   useEffect(() => {
@@ -36,16 +40,13 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
         setLocation('/login');
       } else if (adminOnly && !isAdmin) {
         setLocation('/dashboard');
-      } else if (!adminOnly && !isAdmin && profile && !profile.profileCompleted) {
-        setLocation('/wizard');
       }
     }
-  }, [user, loading, isAdmin, profile, adminOnly, setLocation]);
+  }, [user, loading, isAdmin, adminOnly, setLocation]);
 
   if (loading) return <LoadingScreen />;
   if (!user) return null;
   if (adminOnly && !isAdmin) return null;
-  if (!adminOnly && !isAdmin && profile && !profile.profileCompleted) return null;
 
   return <Component />;
 }
@@ -72,7 +73,12 @@ function WizardRoute({ component: Component }: { component: React.ComponentType 
   return <Component />;
 }
 
-function PublicOnlyRoute({ component: Component }: { component: React.ComponentType }) {
+// /login is a pure sign-in page: an already-authenticated visitor -- and
+// crucially, anyone who just typed a registered email/password here --
+// always lands on their dashboard/admin directly. Login never routes
+// through the profile-completion wizard, no matter how far that account
+// got through onboarding.
+function LoginRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, loading, isAdmin } = useAuth();
   const [_, setLocation] = useLocation();
 
@@ -88,16 +94,45 @@ function PublicOnlyRoute({ component: Component }: { component: React.ComponentT
   return <Component />;
 }
 
+// /register is the only entry point into the onboarding wizard: right
+// after account creation the profile is incomplete, so this sends the
+// brand-new user into /wizard. An already-complete profile that somehow
+// lands back on /register (e.g. a stale tab) is sent to the dashboard
+// instead of back through onboarding.
+function RegisterRoute({ component: Component }: { component: React.ComponentType }) {
+  const { user, loading, isAdmin, profile } = useAuth();
+  const [_, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!loading && user) {
+      if (isAdmin) {
+        setLocation('/admin');
+      } else if (profile && !profile.profileCompleted) {
+        setLocation('/wizard');
+      } else if (profile) {
+        setLocation('/dashboard');
+      }
+      // profile === null (still being created/loaded right after signup):
+      // wait for the next snapshot rather than guessing a destination.
+    }
+  }, [user, loading, isAdmin, profile, setLocation]);
+
+  if (loading) return <LoadingScreen />;
+  if (user) return null;
+
+  return <Component />;
+}
+
 function Router() {
   return (
     <Layout>
       <Switch>
         <Route path="/" component={LandingPage} />
         <Route path="/login">
-          <PublicOnlyRoute component={LoginPage} />
+          <LoginRoute component={LoginPage} />
         </Route>
         <Route path="/register">
-          <PublicOnlyRoute component={RegisterPage} />
+          <RegisterRoute component={RegisterPage} />
         </Route>
         <Route path="/wizard">
           <WizardRoute component={WizardPage} />
