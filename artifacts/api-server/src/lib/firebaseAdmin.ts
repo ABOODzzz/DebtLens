@@ -3,11 +3,11 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { logger } from "./logger";
 
-const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
 if (!rawServiceAccount) {
   throw new Error(
-    "FIREBASE_SERVICE_ACCOUNT_KEY must be set. Add the Firebase Admin SDK service account JSON.",
+    "FIREBASE_SERVICE_ACCOUNT_JSON must be set. Add the Firebase Admin SDK service account JSON.",
   );
 }
 
@@ -15,8 +15,8 @@ let serviceAccount: Record<string, unknown>;
 try {
   serviceAccount = JSON.parse(rawServiceAccount);
 } catch (err) {
-  logger.error({ err }, "Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY as JSON");
-  throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON");
+  logger.error({ err }, "Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON as JSON");
+  throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
 }
 
 let app: App;
