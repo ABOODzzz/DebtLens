@@ -131,8 +131,19 @@ export interface ConsolidationRequestResult {
 
 export interface LoanEligibilityResult {
   eligible: boolean;
-  eligibilityScore: number;
-  maxRecommendedAmount: number;
-  reasoning: string;
+  riskTier: string;
+  /** General credit score on a 300-850 scale. */
+  creditScore: number;
+  creditScoreLabel: string;
+  creditScoreColor: string;
+  guarantorBacked: boolean;
+  recommendedAmount?: number | null;
+  interestRate?: number | null;
+  termMonths?: number | null;
+  monthlyInstallment?: number | null;
+  totalRepayment?: number | null;
+  recommendation: string;
+  basedOnRealData: boolean;
+  currentDebtToIncomePercentage: number;
 }
 

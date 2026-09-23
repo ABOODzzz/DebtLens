@@ -659,19 +659,19 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
 
     return {
         "eligible": verdict["eligible"],
-        "risk_tier": verdict["risk_tier"],
-        "credit_score": verdict["credit_score"],
-        "credit_score_label": credit_score_label,
-        "guarantor_backed": guarantor_context is not None,
-        "credit_score_color": credit_score_color,
-        "recommended_amount": verdict["recommended_amount"],
-        "interest_rate": verdict["interest_rate"],
-        "term_months": verdict["term_months"],
-        "monthly_installment": verdict["monthly_installment"],
-        "total_repayment": verdict["total_repayment"],
+        "riskTier": verdict["risk_tier"],
+        "creditScore": verdict["credit_score"],
+        "creditScoreLabel": credit_score_label,
+        "creditScoreColor": credit_score_color,
+        "guarantorBacked": guarantor_context is not None,
+        "recommendedAmount": verdict["recommended_amount"],
+        "interestRate": verdict["interest_rate"],
+        "termMonths": verdict["term_months"],
+        "monthlyInstallment": verdict["monthly_installment"],
+        "totalRepayment": verdict["total_repayment"],
         "recommendation": verdict["recommendation"],
-        "based_on_real_data": assessment_data["is_real_data"],
-        "current_debt_to_income_percentage": assessment_data["debt_to_income_percentage"],
+        "basedOnRealData": assessment_data["is_real_data"],
+        "currentDebtToIncomePercentage": assessment_data["debt_to_income_percentage"],
     }
 
 

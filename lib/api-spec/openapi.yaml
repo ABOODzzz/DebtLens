@@ -482,16 +482,47 @@ components:
       type: object
       required:
         - eligible
-        - eligibilityScore
-        - maxRecommendedAmount
-        - reasoning
+        - riskTier
+        - creditScore
+        - creditScoreLabel
+        - creditScoreColor
+        - guarantorBacked
+        - recommendation
+        - basedOnRealData
+        - currentDebtToIncomePercentage
       properties:
         eligible:
           type: boolean
-        eligibilityScore:
-          type: integer
-        maxRecommendedAmount:
-          type: number
-        reasoning:
+        riskTier:
           type: string
+        creditScore:
+          type: integer
+          description: General credit score on a 300-850 scale.
+        creditScoreLabel:
+          type: string
+        creditScoreColor:
+          type: string
+        guarantorBacked:
+          type: boolean
+        recommendedAmount:
+          type: number
+          nullable: true
+        interestRate:
+          type: number
+          nullable: true
+        termMonths:
+          type: integer
+          nullable: true
+        monthlyInstallment:
+          type: number
+          nullable: true
+        totalRepayment:
+          type: number
+          nullable: true
+        recommendation:
+          type: string
+        basedOnRealData:
+          type: boolean
+        currentDebtToIncomePercentage:
+          type: number
 

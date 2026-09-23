@@ -12,16 +12,21 @@ paths = [ "/" ]
 localPort = 25675
 
 [services.development]
-run = "cd server_py && python3 run.py --reload"
+run = "bash dev.sh"
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/debt-lens", "run", "build"]
 
 [services.production.run]
-args = ["python3", "artifacts/debt-lens/server_py/run.py"]
+args = ["bash", "artifacts/debt-lens/prod.sh"]
 
 [services.production.run.env]
 PORT = "25675"
+BASE_PATH = "/"
 
 [services.production.health.startup]
 path = "/healthz"
 
 [services.env]
 PORT = "25675"
+BASE_PATH = "/"

@@ -129,9 +129,19 @@ export const RequestConsolidationResponse = zod.object({
  */
 export const AssessLoanEligibilityResponse = zod.object({
   "eligible": zod.boolean(),
-  "eligibilityScore": zod.number().int(),
-  "maxRecommendedAmount": zod.number(),
-  "reasoning": zod.string()
+  "riskTier": zod.string(),
+  "creditScore": zod.number().int().describe('General credit score on a 300-850 scale.'),
+  "creditScoreLabel": zod.string(),
+  "creditScoreColor": zod.string(),
+  "guarantorBacked": zod.boolean(),
+  "recommendedAmount": zod.number().nullish(),
+  "interestRate": zod.number().nullish(),
+  "termMonths": zod.number().int().nullish(),
+  "monthlyInstallment": zod.number().nullish(),
+  "totalRepayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "basedOnRealData": zod.boolean(),
+  "currentDebtToIncomePercentage": zod.number()
 })
 
 
