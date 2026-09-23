@@ -889,20 +889,15 @@ components:
         guarantorBacked:
           type: boolean
         recommendedAmount:
-          type: number
-          nullable: true
+          type: ["number", "null"]
         interestRate:
-          type: number
-          nullable: true
+          type: ["number", "null"]
         termMonths:
-          type: integer
-          nullable: true
+          type: ["integer", "null"]
         monthlyInstallment:
-          type: number
-          nullable: true
+          type: ["number", "null"]
         totalRepayment:
-          type: number
-          nullable: true
+          type: ["number", "null"]
         recommendation:
           type: string
         basedOnRealData:

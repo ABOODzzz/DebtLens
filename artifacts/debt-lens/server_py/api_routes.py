@@ -795,7 +795,7 @@ def _enforce_dti_ceiling(verdict: dict, assessment_data: dict, dti_ceiling_perce
     return verdict
 
 
-@router.get("/ai-loan-assessment")
+@router.post("/ai-loan-assessment")
 def ai_loan_assessment(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
     _require_anthropic()
