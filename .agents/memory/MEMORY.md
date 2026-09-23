@@ -1,3 +1,4 @@
 - [Firebase Storage rules via REST](firebase-storage-rules-deploy.md) — deploy security rules programmatically with the service account, no Firebase CLI/login needed.
 - [DebtLens gated-endpoint pattern](debtlens-awaiting-verification-pattern.md) — how "awaiting verification" placeholder responses must stay schema-conforming across api_routes.py, openapi.yaml, and dashboard.tsx.
 - [DebtLens KYC contract & guarantor flow](debtlens-kyc-contract-and-guarantor-flow.md) — kyc.py must match wizard.tsx's actual payload; photos are Storage paths needing signed URLs; guarantor acceptance ≠ final approval, admin decides.
+- [DebtLens finance contract tests](debtlens-finance-contract-tests.md) — pytest contract test checks /analyze, /restructure, /advice against openapi.yaml and the dashboard dialog fields; extend it for new response fields.
