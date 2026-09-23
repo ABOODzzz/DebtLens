@@ -11,6 +11,7 @@ import logging
 import re
 import threading
 import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -199,8 +200,24 @@ def _get_headlines() -> dict:
 
 @router.get("/headlines")
 def headlines():
-    """Public endpoint (no auth) powering the homepage scrolling news ticker."""
-    return _get_headlines()
+    """
+    Public endpoint (no auth) powering the homepage scrolling news ticker.
+
+    Returns a list of Headline objects ({id, text, source, publishedAt}) per
+    the OpenAPI spec -- _get_headlines() returns the richer internal shape
+    ({"headlines": [...], "closing_remark": ...}), so it's adapted here.
+    """
+    data = _get_headlines()
+    published_at = datetime.now(timezone.utc).isoformat()
+    return [
+        {
+            "id": i + 1,
+            "text": text,
+            "source": "البنك المركزي الأردني",
+            "publishedAt": published_at,
+        }
+        for i, text in enumerate(data["headlines"])
+    ]
 
 
 @router.get("/analyze")
