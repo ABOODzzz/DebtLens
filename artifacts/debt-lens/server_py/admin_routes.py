@@ -549,6 +549,104 @@ def _customer_identity(user_doc: dict) -> tuple[str, str | None]:
     return name, national_id
 
 
+# ---------------------------------------------------------------------------
+# GET /users -- the list backing the admin dashboard's user/review table.
+# ---------------------------------------------------------------------------
+@router.get("/users")
+def list_users(admin: dict = Depends(get_current_admin)):
+    db = _get_db()
+
+    users = []
+    for snapshot in db.collection("users").stream():
+        user_doc = snapshot.to_dict() or {}
+        uid = snapshot.id
+        name, national_id = _customer_identity(user_doc)
+        kyc = user_doc.get("kycVerification") or {}
+
+        try:
+            profile = get_user_financial_profile(uid)
+        except FirebaseUnavailableError:
+            profile = None
+
+        updated_at = user_doc.get("updatedAt")
+        updated_at_iso = updated_at.isoformat() if hasattr(updated_at, "isoformat") else None
+
+        users.append(
+            {
+                "uid": uid,
+                "name": name,
+                "national_id": national_id,
+                "review_status": user_doc.get("reviewStatus") or "no_submission",
+                "review_reason": user_doc.get("reviewReason"),
+                "face_match": kyc.get("faceMatch"),
+                "confidence": kyc.get("confidence"),
+                "has_kyc_submission": bool(kyc),
+                "data_source": profile["data_source"] if profile else "unknown",
+                "debt_to_income_percentage": profile["debt_to_income_percentage"] if profile else None,
+                "stacking_flag": profile["stacking_flag"] if profile else False,
+                "statement_count": profile["statement_count"] if profile else 0,
+                "guarantor_uid": user_doc.get("guarantorUid"),
+                "updated_at": updated_at_iso,
+            }
+        )
+
+    status_priority = {"pending": 0, "no_submission": 1, "approved": 2, "rejected": 3}
+    users.sort(key=lambda u: status_priority.get(u["review_status"], 1))
+
+    return {
+        "user_count": len(users),
+        "pending_count": sum(1 for u in users if u["review_status"] == "pending"),
+        "users": users,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /kyc-decision -- manual admin override of a user's identity review.
+# ---------------------------------------------------------------------------
+class KycDecisionBody(BaseModel):
+    uid: str
+    decision: Literal["approved", "rejected"]
+    note: str | None = None
+
+
+@router.post("/kyc-decision")
+def kyc_decision(body: KycDecisionBody, admin: dict = Depends(get_current_admin)):
+    db = _get_db()
+    user_doc_ref = db.collection("users").document(body.uid)
+    if not user_doc_ref.get().exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No user found for uid={body.uid}")
+
+    from firebase_admin import firestore
+
+    decision_label = "تمت الموافقة" if body.decision == "approved" else "تم الرفض"
+    reason = f"{decision_label} يدويًا من قبل الإدارة."
+    if body.note:
+        reason += f" ملاحظة: {body.note}"
+
+    user_doc_ref.set(
+        {
+            "reviewStatus": body.decision,
+            "reviewReason": reason,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    user_doc_ref.collection("kycAuditLog").add(
+        {
+            "uid": body.uid,
+            "reviewStatus": body.decision,
+            "reviewReason": reason,
+            "adminUid": admin["uid"],
+            "manual": True,
+            "note": body.note,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        }
+    )
+
+    return {"uid": body.uid, "review_status": body.decision, "reason": reason}
+
+
 def _draft_letter(prompt: str, max_tokens: int = 768) -> str:
     message = anthropic_client.messages.create(
         model=ANTHROPIC_MODEL,

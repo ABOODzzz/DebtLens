@@ -1,5 +1,19 @@
 {% extends "base.html" %}
 {% block title %}لوحة الإدارة - DebtLens{% endblock %}
+{% block head %}
+<style>
+  table.admin-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  table.admin-table th, table.admin-table td { padding: 0.6rem 0.5rem; text-align: right; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  table.admin-table th { color: #5a6b7f; font-weight: 700; font-size: 0.82rem; }
+  .badge-approved { background: #e4f4e7; color: #1c7a37; }
+  .badge-rejected { background: #fbe4e4; color: #b3261e; }
+  .badge-pending { background: #fdf1d6; color: #9a6b06; }
+  .badge-none { background: #eef1f4; color: #5a6b7f; }
+  .row-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .row-actions button { padding: 0.35rem 0.7rem; font-size: 0.82rem; }
+  .insight-box { white-space: pre-wrap; background: #f5f7f9; border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.85rem; display: none; }
+</style>
+{% endblock %}
 {% block header_extra %}
 <span id="user-bar" style="display:none; align-items:center; gap:0.75rem;">
   <span id="user-email" class="muted" style="color:#f3d98b;"></span>
@@ -10,12 +24,8 @@
 <div class="card">
   <h1 style="margin-top:0;">لوحة الإدارة</h1>
   <p class="muted">
-    مخصصة للمستخدم الإداري فقط (UID: <code>{{ admin_uid }}</code>). سيتم عرض قائمة المستخدمين
-    وطلبات مراجعة الهوية هنا بعد ربط نقاط النهاية الإدارية بواجهة FastAPI.
+    مخصصة للمستخدم الإداري فقط (UID: <code>{{ admin_uid }}</code>).
   </p>
-</div>
-<div class="card">
-  <h2 style="margin-top:0; font-size:1.1rem;">حالة الخادم</h2>
   <p class="muted">
     Firebase Admin:
     {% if firebase_enabled %}
@@ -25,6 +35,34 @@
     {% endif %}
   </p>
 </div>
+
+{% if not firebase_enabled or not firebase_web_configured %}
+<div class="card">
+  <p class="badge badge-warn">قائمة المستخدمين غير متاحة (لم يتم إعداد Firebase على الخادم)</p>
+</div>
+{% else %}
+<div class="card">
+  <h2 style="margin-top:0; font-size:1.1rem;">المستخدمون وطلبات مراجعة الهوية</h2>
+  <p class="muted" id="users-summary">جارٍ التحميل...</p>
+  <p id="users-error" class="badge badge-warn" style="display:none;"></p>
+  <div style="overflow-x:auto;">
+    <table class="admin-table" id="users-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>الاسم</th>
+          <th>UID</th>
+          <th>حالة المراجعة</th>
+          <th>مصدر البيانات</th>
+          <th>نسبة الدين/الدخل</th>
+          <th>تكديس قروض</th>
+          <th>إجراءات</th>
+        </tr>
+      </thead>
+      <tbody id="users-tbody"></tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {% if firebase_enabled and firebase_web_configured %}
 <script type="module">
@@ -36,6 +74,130 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+
+  const STATUS_LABELS = {
+    approved: ["موافَق عليه", "badge-approved"],
+    rejected: ["مرفوض", "badge-rejected"],
+    pending: ["بانتظار المراجعة", "badge-pending"],
+    no_submission: ["لم يقدّم طلبًا بعد", "badge-none"],
+  };
+
+  let idToken = null;
+
+  async function authedFetch(path, options = {}) {
+    const res = await fetch(path, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${idToken}`,
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+      },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `طلب فشل بالحالة ${res.status}`);
+    }
+    return res.json();
+  }
+
+  function renderRow(u) {
+    const [label, cls] = STATUS_LABELS[u.review_status] || STATUS_LABELS.no_submission;
+    const dti = u.debt_to_income_percentage !== null && u.debt_to_income_percentage !== undefined
+      ? `${u.debt_to_income_percentage}%`
+      : "—";
+    const stacking = u.stacking_flag
+      ? '<span class="badge badge-warn">نعم</span>'
+      : '<span class="badge badge-none">لا</span>';
+
+    const canDecide = u.has_kyc_submission;
+    const actions = `
+      <div class="row-actions">
+        <button class="btn btn-outline insight-btn" data-uid="${u.uid}">تحليل المخاطر</button>
+        ${canDecide ? `<button class="btn approve-btn" data-uid="${u.uid}">موافقة</button>` : ""}
+        ${canDecide ? `<button class="btn btn-outline reject-btn" data-uid="${u.uid}">رفض</button>` : ""}
+      </div>
+      <div class="insight-box" id="insight-${u.uid}"></div>
+    `;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${u.name || "—"}</td>
+      <td><code style="font-size:0.75rem;">${u.uid}</code></td>
+      <td><span class="badge ${cls}">${label}</span></td>
+      <td>${u.data_source}</td>
+      <td>${dti}</td>
+      <td>${stacking}</td>
+      <td>${actions}</td>
+    `;
+    return tr;
+  }
+
+  async function loadUsers() {
+    const summary = document.getElementById("users-summary");
+    const errorBox = document.getElementById("users-error");
+    const table = document.getElementById("users-table");
+    const tbody = document.getElementById("users-tbody");
+
+    try {
+      const data = await authedFetch("/api/admin/users");
+      summary.textContent = `إجمالي المستخدمين: ${data.user_count} — بانتظار المراجعة: ${data.pending_count}`;
+      tbody.innerHTML = "";
+      data.users.forEach((u) => tbody.appendChild(renderRow(u)));
+      table.style.display = data.users.length ? "table" : "none";
+      if (!data.users.length) {
+        summary.textContent = "لا يوجد مستخدمون مسجلون بعد.";
+      }
+    } catch (error) {
+      errorBox.textContent = error.message || "تعذّر تحميل قائمة المستخدمين.";
+      errorBox.style.display = "block";
+      summary.textContent = "";
+    }
+  }
+
+  document.addEventListener("click", async (event) => {
+    const uid = event.target.dataset.uid;
+    if (!uid) return;
+
+    if (event.target.classList.contains("approve-btn") || event.target.classList.contains("reject-btn")) {
+      const decision = event.target.classList.contains("approve-btn") ? "approved" : "rejected";
+      event.target.disabled = true;
+      try {
+        await authedFetch("/api/admin/kyc-decision", {
+          method: "POST",
+          body: JSON.stringify({ uid, decision }),
+        });
+        await loadUsers();
+      } catch (error) {
+        alert(error.message || "تعذّر تنفيذ الإجراء.");
+        event.target.disabled = false;
+      }
+      return;
+    }
+
+    if (event.target.classList.contains("insight-btn")) {
+      const box = document.getElementById(`insight-${uid}`);
+      event.target.disabled = true;
+      event.target.textContent = "جارٍ التحليل...";
+      try {
+        const insight = await authedFetch("/api/admin/user-insight", {
+          method: "POST",
+          body: JSON.stringify({ uid }),
+        });
+        box.style.display = "block";
+        box.textContent =
+          `مستوى المخاطرة: ${insight.risk_tier}\n` +
+          `التوصية: ${insight.recommendation}\n` +
+          `نقاط للتحقق: ${insight.concerns.join("، ") || "لا يوجد"}\n\n` +
+          `${insight.notes}`;
+      } catch (error) {
+        box.style.display = "block";
+        box.textContent = error.message || "تعذّر توليد التحليل.";
+      } finally {
+        event.target.disabled = false;
+        event.target.textContent = "تحليل المخاطر";
+      }
+    }
+  });
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
@@ -50,12 +212,15 @@
       return;
     }
 
-    localStorage.setItem("debtlens_id_token", await user.getIdToken());
+    idToken = await user.getIdToken();
+    localStorage.setItem("debtlens_id_token", idToken);
     localStorage.setItem("debtlens_uid", user.uid);
 
     const bar = document.getElementById("user-bar");
     bar.style.display = "flex";
     document.getElementById("user-email").textContent = user.email || user.uid;
+
+    loadUsers();
   });
 
   document.getElementById("logout-btn").addEventListener("click", async () => {
