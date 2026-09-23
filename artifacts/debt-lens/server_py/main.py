@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from anthropic_client import anthropic_client
 from api_routes import router as api_router
 from firebase_client import ADMIN_UID, FIREBASE_ENABLED, get_current_admin, get_current_user
+from kyc import router as kyc_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("debtlens")
@@ -39,6 +40,7 @@ if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 app.include_router(api_router)
+app.include_router(kyc_router)
 
 
 @app.get("/", response_class=HTMLResponse)
