@@ -25,6 +25,7 @@ export const submitKycBodyPhotoPathsMin = 3;
 export const submitKycBodyPhotoPathsMax = 3;
 
 
+
 export const SubmitKycBody = zod.object({
   "profile": zod.record(zod.string(), zod.unknown()),
   "photoPaths": zod.array(zod.string()).min(submitKycBodyPhotoPathsMin).max(submitKycBodyPhotoPathsMax)
@@ -462,7 +463,14 @@ export const ListGuarantorRequestsResponse = zod.object({
   "guarantor_debt_to_income_percentage": zod.number().nullish(),
   "guarantor_stacking_flag": zod.boolean().optional(),
   "guarantor_active_guarantees_count": zod.number().int().optional(),
-  "guarantor_max_concurrent": zod.number().int().optional()
+  "guarantor_max_concurrent": zod.number().int().optional(),
+  "decision_history": zod.array(zod.object({
+  "timestamp": zod.coerce.date(),
+  "previous_status": zod.enum(['awaiting_admin_review', 'approved', 'rejected']),
+  "new_status": zod.enum(['approved', 'rejected']),
+  "reason": zod.string().nullable(),
+  "admin_uid": zod.string()
+})).describe('Immutable final admin decisions and later revisions, in chronological order.')
 }))
 })
 
@@ -501,6 +509,7 @@ export const SubmitGuarantorDecisionResponse = zod.object({
   "status": zod.enum(['approved', 'rejected'])
 })
 
+
 /**
  * @summary Revise a recently-made final admin decision on a digital guarantor request
  */
@@ -509,6 +518,15 @@ export const ReviseGuarantorDecisionBody = zod.object({
   "new_status": zod.enum(['approved', 'rejected']),
   "reason": zod.string()
 })
+
+export const ReviseGuarantorDecisionResponse = zod.object({
+  "relationship_id": zod.string(),
+  "requester_uid": zod.string(),
+  "guarantor_uid": zod.string(),
+  "status": zod.enum(['approved', 'rejected'])
+})
+
+
 /**
  * @summary List loan applications awaiting or already given a final admin disbursement decision
  */
@@ -628,11 +646,4 @@ export const SubmitKycDecisionResponse = zod.object({
   "review_status": zod.enum(['approved', 'rejected']),
   "reason": zod.string()
 })
-
-
-export const ReviseGuarantorDecisionResponse = zod.object({
-  "relationship_id": zod.string(),
-  "requester_uid": zod.string(),
-  "guarantor_uid": zod.string(),
-  "status": zod.enum(['approved', 'rejected'])
-})
+// End of generated API definitions.

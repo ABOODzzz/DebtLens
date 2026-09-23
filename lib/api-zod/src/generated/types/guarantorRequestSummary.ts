@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { GuarantorDecisionHistoryEntry } from './guarantorDecisionHistoryEntry';
 import type { GuarantorRequestSummaryStatus } from './guarantorRequestSummaryStatus';
 
 export interface GuarantorRequestSummary {
@@ -34,4 +35,6 @@ export interface GuarantorRequestSummary {
   guarantor_stacking_flag?: boolean;
   guarantor_active_guarantees_count?: number;
   guarantor_max_concurrent?: number;
+  /** Immutable final admin decisions and later revisions, in chronological order. */
+  decision_history: GuarantorDecisionHistoryEntry[];
 }

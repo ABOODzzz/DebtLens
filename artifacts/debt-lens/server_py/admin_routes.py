@@ -1131,9 +1131,36 @@ def user_insight(body: UserInsightBody, admin: dict = Depends(get_current_admin)
 # parties' financial standing.
 # ---------------------------------------------------------------------------
 def _iso(value) -> str | None:
+    if isinstance(value, str):
+        return value
     return value.isoformat() if hasattr(value, "isoformat") else None
 
+def _guarantor_decision_history(rel: dict) -> list[dict]:
+    """Return only valid, API-shaped immutable admin decision entries."""
+    history = rel.get("adminDecisionHistory")
+    if not isinstance(history, list):
+        return []
 
+    output = []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        timestamp = _iso(entry.get("decidedAt"))
+        previous_status = entry.get("previousStatus")
+        new_status = entry.get("newStatus")
+        admin_uid = entry.get("adminUid")
+        if not timestamp or not previous_status or not new_status or not admin_uid:
+            continue
+        output.append(
+            {
+                "timestamp": timestamp,
+                "previous_status": previous_status,
+                "new_status": new_status,
+                "reason": entry.get("reason"),
+                "admin_uid": admin_uid,
+            }
+        )
+    return output
 @router.get("/guarantor-requests")
 def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
     from guarantor import GUARANTOR_MAX_CONCURRENT, GUARANTOR_MAX_TOTAL_EXPOSURE, _capacity
@@ -1195,6 +1222,7 @@ def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
                 "guarantor_stacking_flag": guarantor_profile["stacking_flag"] if guarantor_profile else False,
                 "guarantor_active_guarantees_count": guarantor_capacity["used_count"] if guarantor_capacity else 0,
                 "guarantor_max_concurrent": guarantor_capacity["max_count"] if guarantor_capacity else GUARANTOR_MAX_CONCURRENT,
+                "decision_history": _guarantor_decision_history(rel),
             }
         )
 
@@ -1323,6 +1351,7 @@ class GuarantorReviseBody(BaseModel):
 @router.post("/guarantor-decision")
 def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_current_admin)):
     from notifications import notify
+    from guarantor import ADMIN_DECISION_HISTORY_FIELD, build_admin_decision_history_entry
 
     db = _get_db()
     relationship_ref = db.collection("guarantorRelationships").document(body.relationship_id)
@@ -1339,11 +1368,22 @@ def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_cu
 
     from firebase_admin import firestore
 
+    decision_reason = body.reason.strip() if body.reason else None
     relationship_ref.update(
         {
             "status": body.decision,
             "adminDecisionAt": firestore.SERVER_TIMESTAMP,
-            "adminDecisionReason": body.reason,
+            "adminDecisionReason": decision_reason,
+            ADMIN_DECISION_HISTORY_FIELD: firestore.ArrayUnion(
+                [
+                    build_admin_decision_history_entry(
+                        previous_status=rel["status"],
+                        new_status=body.decision,
+                        reason=decision_reason,
+                        admin_uid=admin["uid"],
+                    )
+                ]
+            ),
         }
     )
 
@@ -1353,7 +1393,7 @@ def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_cu
             f"لطلب {rel.get('requesterName') or 'العميل'}."
         )
     else:
-        reason_line = f" السبب: {body.reason}" if body.reason else ""
+        reason_line = f" السبب: {decision_reason}" if decision_reason else ""
         title, message = "رُفضت الكفالة", f"رفضت الإدارة طلب الكفالة.{reason_line}"
 
     for uid in (requester_uid, guarantor_uid):
@@ -1390,6 +1430,7 @@ def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_cu
 @router.post("/guarantor-revise")
 def guarantor_revise(body: GuarantorReviseBody, admin: dict = Depends(get_current_admin)):
     from notifications import notify
+    from guarantor import ADMIN_DECISION_HISTORY_FIELD, build_admin_decision_history_entry
 
     if not body.reason.strip():
         raise HTTPException(
@@ -1435,11 +1476,22 @@ def guarantor_revise(body: GuarantorReviseBody, admin: dict = Depends(get_curren
 
     from firebase_admin import firestore
 
+    decision_reason = body.reason.strip()
     relationship_ref.update(
         {
             "status": body.new_status,
             "adminDecisionAt": firestore.SERVER_TIMESTAMP,
-            "adminDecisionReason": body.reason.strip(),
+            "adminDecisionReason": decision_reason,
+            ADMIN_DECISION_HISTORY_FIELD: firestore.ArrayUnion(
+                [
+                    build_admin_decision_history_entry(
+                        previous_status=previous_status,
+                        new_status=body.new_status,
+                        reason=decision_reason,
+                        admin_uid=admin["uid"],
+                    )
+                ]
+            ),
         }
     )
 
@@ -1448,7 +1500,7 @@ def guarantor_revise(body: GuarantorReviseBody, admin: dict = Depends(get_curren
     new_status_label = "الموافقة" if body.new_status == "approved" else "الرفض"
     message = (
         f"راجعت الإدارة قرارها السابق بشأن الكفالة الرقمية، وأصبح القرار الآن {new_status_label}. "
-        f"السبب: {body.reason.strip()}"
+        f"السبب: {decision_reason}"
     )
 
     # The original approval advances a linked application to `submitted`, while

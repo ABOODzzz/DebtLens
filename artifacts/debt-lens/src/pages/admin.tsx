@@ -387,6 +387,12 @@ function riskTierClass(tier: string) {
   return "bg-red-100 text-red-700";
 }
 
+function guarantorDecisionStatusLabel(status: string) {
+  if (status === "awaiting_admin_review") return "بانتظار قرار الإدارة";
+  if (status === "approved") return "موافق عليه";
+  if (status === "rejected") return "مرفوض";
+  return status;
+}
 function GuarantorRequestsTab() {
   const queryClient = useQueryClient();
   const requestsQuery = useListGuarantorRequests();
@@ -398,6 +404,7 @@ function GuarantorRequestsTab() {
   const [reviseTarget, setReviseTarget] = useState<string | null>(null);
   const [reviseNewStatus, setReviseNewStatus] = useState<GuarantorReviseInputNewStatus>("rejected");
   const [reviseReason, setReviseReason] = useState("");
+  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
 
   const invalidate = () => {
@@ -486,6 +493,7 @@ function GuarantorRequestsTab() {
       <div className="grid grid-cols-1 gap-4">
         {requests.map((req) => {
           const insight = insightByRelationship[req.id];
+          const history = req.decision_history ?? [];
           const busy = activeRelationship === req.id && (insightMutation.isPending || decisionMutation.isPending || reviseMutation.isPending);
           return (
             <Card key={req.id}>
@@ -498,7 +506,7 @@ function GuarantorRequestsTab() {
                     <span className="font-bold">{req.guarantor_name || "-"}</span>
                   </div>
                   <Badge variant={req.status === 'approved' ? 'default' : req.status === 'rejected' ? 'destructive' : 'secondary'}>
-                    {req.status === 'awaiting_admin_review' ? 'بانتظار قرار الإدارة' : req.status === 'approved' ? 'موافق عليه' : 'مرفوض'}
+                    {guarantorDecisionStatusLabel(req.status)}
                   </Badge>
                 </div>
 
@@ -567,16 +575,59 @@ function GuarantorRequestsTab() {
                 )}
 
                 {(req.status === 'approved' || req.status === 'rejected') && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => openRevise(req.id, req.status)}
-                    >
-                      {busy && reviseMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <RotateCcw className="w-4 h-4 ml-1" />}
-                      تعديل القرار
-                    </Button>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => openRevise(req.id, req.status)}
+                      >
+                        {busy && reviseMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <RotateCcw className="w-4 h-4 ml-1" />}
+                        تعديل القرار
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setExpandedHistory((previous) => ({
+                          ...previous,
+                          [req.id]: !previous[req.id],
+                        }))}
+                      >
+                        <History className="w-4 h-4 ml-1" />
+                        {expandedHistory[req.id] ? "إخفاء سجل القرارات" : "عرض سجل القرارات"}
+                      </Button>
+                    </div>
+                    {expandedHistory[req.id] && (
+                      <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                        <p className="text-sm font-bold">سجل قرارات الإدارة</p>
+                        {history.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">لا يوجد سجل محفوظ لهذا القرار.</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {history.slice().reverse().map((entry, index) => (
+                              <div key={`${entry.timestamp}-${entry.admin_uid}-${index}`} className="border-r-2 border-primary/30 pr-3 text-sm">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant={entry.new_status === "approved" ? "default" : "destructive"}>
+                                    {guarantorDecisionStatusLabel(entry.new_status)}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatGuarantorDecisionTimestamp(entry.timestamp)}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-muted-foreground">
+                                  من {guarantorDecisionStatusLabel(entry.previous_status)} إلى {guarantorDecisionStatusLabel(entry.new_status)}
+                                </p>
+                                {entry.reason && <p className="mt-1">السبب: {entry.reason}</p>}
+                                <p className="mt-1 text-xs text-muted-foreground" dir="ltr">
+                                  المسؤول: {entry.admin_uid}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -974,4 +1025,13 @@ function LoanApplicationsTab() {
       </Dialog>
     </div>
   );
+}
+
+function formatGuarantorDecisionTimestamp(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return new Intl.DateTimeFormat("ar-JO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }

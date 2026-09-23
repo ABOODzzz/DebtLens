@@ -486,6 +486,32 @@ export const GuarantorRequestSummaryStatus = {
   rejected: 'rejected',
 } as const;
 
+export type GuarantorDecisionHistoryEntryPreviousStatus = typeof GuarantorDecisionHistoryEntryPreviousStatus[keyof typeof GuarantorDecisionHistoryEntryPreviousStatus];
+
+
+export const GuarantorDecisionHistoryEntryPreviousStatus = {
+  awaiting_admin_review: 'awaiting_admin_review',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type GuarantorDecisionHistoryEntryNewStatus = typeof GuarantorDecisionHistoryEntryNewStatus[keyof typeof GuarantorDecisionHistoryEntryNewStatus];
+
+
+export const GuarantorDecisionHistoryEntryNewStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface GuarantorDecisionHistoryEntry {
+  timestamp: string;
+  previous_status: GuarantorDecisionHistoryEntryPreviousStatus;
+  new_status: GuarantorDecisionHistoryEntryNewStatus;
+  /** @nullable */
+  reason: string | null;
+  admin_uid: string;
+}
+
 export interface GuarantorRequestSummary {
   id: string;
   requester_uid: string;
@@ -513,6 +539,8 @@ export interface GuarantorRequestSummary {
   guarantor_stacking_flag?: boolean;
   guarantor_active_guarantees_count?: number;
   guarantor_max_concurrent?: number;
+  /** Immutable final admin decisions and later revisions, in chronological order. */
+  decision_history: GuarantorDecisionHistoryEntry[];
 }
 
 export interface GuarantorRequestsList {
@@ -568,6 +596,19 @@ export interface GuarantorDecisionInput {
 }
 
 export type GuarantorReviseInputNewStatus = typeof GuarantorReviseInputNewStatus[keyof typeof GuarantorReviseInputNewStatus];
+
+
+export const GuarantorReviseInputNewStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface GuarantorReviseInput {
+  relationship_id: string;
+  new_status: GuarantorReviseInputNewStatus;
+  reason: string;
+}
+
 export type GuarantorDecisionResultStatus = typeof GuarantorDecisionResultStatus[keyof typeof GuarantorDecisionResultStatus];
 
 
@@ -671,17 +712,5 @@ export const KycDecisionResultReviewStatus = {
 export interface KycDecisionResult {
   uid: string;
   review_status: KycDecisionResultReviewStatus;
-  reason: string;
-}
-
-
-export const GuarantorReviseInputNewStatus = {
-  approved: 'approved',
-  rejected: 'rejected',
-} as const;
-
-export interface GuarantorReviseInput {
-  relationship_id: string;
-  new_status: GuarantorReviseInputNewStatus;
   reason: string;
 }

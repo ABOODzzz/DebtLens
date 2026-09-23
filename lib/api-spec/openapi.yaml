@@ -1702,6 +1702,7 @@ components:
         - requester_uid
         - requester_name
         - status
+        - decision_history
       properties:
         id:
           type: string
@@ -1740,6 +1741,33 @@ components:
           type: integer
         guarantor_max_concurrent:
           type: integer
+        decision_history:
+          type: array
+          description: Immutable final admin decisions and later revisions, in chronological order.
+          items:
+            $ref: "#/components/schemas/GuarantorDecisionHistoryEntry"
+    GuarantorDecisionHistoryEntry:
+      type: object
+      required:
+        - timestamp
+        - previous_status
+        - new_status
+        - reason
+        - admin_uid
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        previous_status:
+          type: string
+          enum: [awaiting_admin_review, approved, rejected]
+        new_status:
+          type: string
+          enum: [approved, rejected]
+        reason:
+          type: ["string", "null"]
+        admin_uid:
+          type: string
     GuarantorRequestsList:
       type: object
       required:

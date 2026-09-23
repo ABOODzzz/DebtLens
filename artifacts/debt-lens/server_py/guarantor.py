@@ -35,6 +35,7 @@ Every step that changes a relationship's status fires an in-app notification
 """
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -70,6 +71,24 @@ REQUESTER_MAX_TOTAL_BACKED = REQUESTER_MAX_GUARANTORS * GUARANTOR_BACKED_MAX_AMO
 _ACTIVE_STATUSES = ("pending", "awaiting_admin_review", "approved")
 
 COLLECTION = "guarantorRelationships"
+ADMIN_DECISION_HISTORY_FIELD = "adminDecisionHistory"
+
+
+def build_admin_decision_history_entry(
+    *,
+    previous_status: str,
+    new_status: str,
+    reason: str | None,
+    admin_uid: str,
+) -> dict:
+    """Build one append-only record for a final admin guarantor decision."""
+    return {
+        "decidedAt": datetime.now(timezone.utc),
+        "previousStatus": previous_status,
+        "newStatus": new_status,
+        "reason": reason,
+        "adminUid": admin_uid,
+    }
 
 
 def _get_db():
@@ -263,6 +282,7 @@ def request_guarantor(body: GuarantorRequestBody, user: dict = Depends(get_curre
             "respondedAt": None,
             "adminDecisionAt": None,
             "adminDecisionReason": None,
+            ADMIN_DECISION_HISTORY_FIELD: [],
         }
     )
 
