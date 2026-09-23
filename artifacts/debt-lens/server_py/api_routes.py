@@ -6,7 +6,11 @@ and calls `user_data.get_user_financial_profile` first to decide whether the
 user has real, statement-verified data or should be told to wait.
 """
 
+import json
 import logging
+import re
+import threading
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -88,6 +92,115 @@ def _build_restructuring_context(profile: dict) -> dict | None:
         "institution_breakdown": active_institutions,
         "restructuring_plan": plan,
     }
+
+
+# ---------------------------------------------------------------------------
+# Homepage news ticker headlines
+#
+# Public endpoint (no auth) with a 5-minute in-memory cache. If Claude's
+# call fails or returns something we can't parse as JSON, we keep serving
+# whatever is currently cached rather than erroring out -- and if nothing
+# has ever been cached yet, we fall back to the static headlines in
+# market_data.py so the ticker never has nothing to show.
+# ---------------------------------------------------------------------------
+_HEADLINES_CACHE_TTL_SECONDS = 5 * 60
+_headlines_cache: dict = {"data": None, "expires_at": 0.0}
+_headlines_lock = threading.Lock()
+
+
+def _fallback_headlines() -> dict:
+    static_headlines = market_data.get_market_headlines()
+    return {
+        "headlines": static_headlines,
+        "closing_remark": "ينصح الخبراء المقترضين بمراجعة التزاماتهم الشهرية بانتظام قبل أخذ أي تمويل جديد.",
+    }
+
+
+def _parse_headlines_json(text: str) -> dict:
+    """
+    Parse Claude's response into {"headlines": [3 strings], "closing_remark": str}.
+    Strips markdown code fences if present, and falls back to extracting the
+    first {...} block if the response has extra surrounding text.
+    """
+    cleaned = text.strip()
+    cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
+    cleaned = re.sub(r"```$", "", cleaned).strip()
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not match:
+            raise
+        data = json.loads(match.group(0))
+
+    headlines = data.get("headlines")
+    closing_remark = data.get("closing_remark")
+
+    if (
+        not isinstance(headlines, list)
+        or len(headlines) != 3
+        or not all(isinstance(h, str) and h.strip() for h in headlines)
+        or not isinstance(closing_remark, str)
+        or not closing_remark.strip()
+    ):
+        raise ValueError("Unexpected headlines JSON shape")
+
+    return {"headlines": headlines, "closing_remark": closing_remark}
+
+
+def _generate_headlines_via_claude() -> dict:
+    prompt = f"""أنت محرر أخبار اقتصادية أردني. بناءً على البيانات الحقيقية التالية:
+
+- سعر الفائدة الرئيسي للبنك المركزي الأردني: {market_data.CBJ_POLICY_RATE_PERCENT:.2f}%
+- معدل التضخم السنوي: {market_data.INFLATION_RATE_PERCENT:.1f}%
+- احتياطيات العملات الأجنبية لدى البنك المركزي: {market_data.FOREX_RESERVES_USD_BILLION:.1f} مليار دولار
+
+اكتب 3 جمل إخبارية قصيرة باللغة العربية الفصحى بأسلوب نشرة أخبار اقتصادية، كل جملة تتناول أحد المؤشرات الثلاثة أعلاه. \
+نوّع في الصياغة والأسلوب في كل مرة بحيث لا تبدو الجمل مكررة أو آلية، لكن حافظ على دقة الأرقام كما هي.
+
+أضف أيضًا ملاحظة ختامية عامة واحدة عن استقرار السوق أو نصيحة للمقترضين.
+
+أعد الرد بصيغة JSON فقط، بدون أي نص إضافي قبله أو بعده، بالشكل التالي بالضبط:
+{{"headlines": ["جملة 1", "جملة 2", "جملة 3"], "closing_remark": "الملاحظة الختامية"}}"""
+
+    message = anthropic_client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = _extract_response_text(message)
+    return _parse_headlines_json(text)
+
+
+def _get_headlines() -> dict:
+    now = time.time()
+
+    with _headlines_lock:
+        if _headlines_cache["data"] is not None and now < _headlines_cache["expires_at"]:
+            return _headlines_cache["data"]
+
+    if anthropic_client is None:
+        logger.warning("Anthropic client unavailable; serving cached/fallback headlines.")
+        return _headlines_cache["data"] or _fallback_headlines()
+
+    try:
+        data = _generate_headlines_via_claude()
+    except Exception as exc:  # noqa: BLE001 - any failure falls back to cache
+        logger.warning("Headline generation failed, serving cached/fallback headlines: %s", exc)
+        return _headlines_cache["data"] or _fallback_headlines()
+
+    with _headlines_lock:
+        _headlines_cache["data"] = data
+        _headlines_cache["expires_at"] = time.time() + _HEADLINES_CACHE_TTL_SECONDS
+
+    return data
+
+
+@router.get("/headlines")
+def headlines():
+    """Public endpoint (no auth) powering the homepage scrolling news ticker."""
+    return _get_headlines()
 
 
 @router.get("/analyze")
