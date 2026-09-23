@@ -82,10 +82,17 @@ def _has_manual_analysis_data(profile: dict) -> bool:
 
 def _analysis_totals(profile: dict) -> tuple[float, float]:
     if profile["data_source"] == "verified":
-        metrics = finance.compute_risk_metrics(profile["transactions"])
-        income = profile["profile"]["monthly_income"] or metrics["total_income"]
-        obligations = profile["total_monthly_installments"] or metrics["total_repayments"]
-        return float(income or 0), float(obligations or 0)
+        income = profile["profile"]["monthly_income"]
+        installments = float(profile["total_monthly_installments"])
+        manual = profile["profile"].get("manual_obligations") or []
+        # If a lender statement supplies installments, don't count a
+        # customer's earlier self-reported loan installments twice.
+        other_obligations = sum(
+            float(item.get("amount") or 0)
+            for item in manual
+            if installments <= 0 or item.get("category") != "loans"
+        )
+        return float(income or 0), round(installments + other_obligations, 2)
     return (
         float(profile["profile"]["monthly_income"] or 0),
         float(profile["profile"].get("manual_monthly_obligations") or 0),
@@ -116,8 +123,8 @@ def _active_institutions(profile: dict) -> list[dict]:
 
 
 def _effective_income(profile: dict, risk_metrics: dict) -> float:
-    """Real, transaction-derived income when available, else self-reported."""
-    return risk_metrics["total_income"] or profile["profile"]["monthly_income"]
+    """The unified monthly income, never a multi-month sum of salary credits."""
+    return profile["profile"]["monthly_income"] or 0
 
 
 def _lender_start_date(transactions: list[dict], institution_name: str) -> str:
@@ -408,6 +415,8 @@ def analyze(payload: AnalyzeInput, user: dict = Depends(get_current_user)):
         "debtToIncomeRatio": debt_ratio,
         "budgetBreakdown": budget_breakdown,
         "insights": _build_analysis_insights(risk_metrics, profile),
+        **({"bankAnalysis": profile["bank_analysis"]} if profile.get("bank_analysis") else {}),
+        "incomeSource": profile["profile"].get("income_source", "self_reported"),
     }
 
 
@@ -511,12 +520,22 @@ def advice(user: dict = Depends(get_current_user)):
         if profile["data_source"] == "verified"
         else "لا توجد كشوفات محللة بعد؛ الأرقام التالية مُصرّح بها من العميل ولا تمثل بيانات بنكية موثقة."
     )
+    bank_analysis = profile.get("bank_analysis")
+    bank_context = (
+        f"تدفق كشف البنك المُحلّل: {bank_analysis['summary']}\n"
+        f"تدفق الأشهر: {bank_analysis['monthly_breakdown']}\n"
+        f"تصنيف الحركات: {bank_analysis['category_breakdown']}\n"
+        "الإيداعات والتحويلات ليست كلها راتبًا؛ لا تعتبرها دخلًا دوريًا لمجرد أنها حركات دائنة."
+        if bank_analysis else "لا يوجد كشف حساب بنكي مُحلّل."
+    )
 
     prompt = f"""أنت مستشار مالي أردني تتحدث باللهجة الأردنية العامية بأسلوب ودي وبسيط.
 
 بيانات المستخدم المالية الحقيقية:
 {statement_metrics}
+{bank_context}
 - الدخل الشهري المعتمد: {income} دينار
+- مصدر الدخل الشهري: {profile['profile'].get('income_source', 'self_reported')}
 - الالتزامات الشهرية الكاملة (قروض، إيجار، فواتير وغيرها): {monthly_obligations} دينار
 - نسبة الالتزامات إلى الدخل: {round(monthly_obligations / income * 100, 2) if income > 0 else 0}%
 - المتاح بعد خصم جميع الالتزامات: {disposable_income} دينار
@@ -689,10 +708,7 @@ def _guarantor_context(uid: str) -> dict | None:
 
 def _loan_assessment_data(profile: dict) -> dict:
     """
-    Decide what income/obligation figures to feed the assessment: real,
-    statement-derived numbers when verified, otherwise synthetic demo
-    transactions -- while always keeping the real, self-reported employment
-    and business fields since those aren't tied to statement verification.
+    Use the same monthly figures as analysis/advice, plus bank cash flow.
     """
     income, obligations = _analysis_totals(profile)
     is_real_data = profile["data_source"] == "verified"
@@ -710,6 +726,8 @@ def _loan_assessment_data(profile: dict) -> dict:
         "disposable_income": round(max(income - obligations, 0), 2),
         "debt_to_income_percentage": dti,
         "financing_institutions_count": financing_institutions_count,
+        "bank_analysis": profile.get("bank_analysis"),
+        "income_source": profile["profile"].get("income_source", "self_reported"),
     }
 
 
@@ -806,12 +824,22 @@ def _generate_loan_assessment_via_claude(
         guarantor_line = "لا يوجد كفيل رقمي لهذا العميل."
 
     dti_ceiling = _GUARANTOR_DTI_CEILING_PERCENT if guarantor_context else _LOAN_ASSESSMENT_DTI_CEILING_PERCENT
+    bank_analysis = assessment_data.get("bank_analysis")
+    bank_context = (
+        f"تدفق كشف البنك المُحلّل: {bank_analysis['summary']}\n"
+        f"تدفق الأشهر: {bank_analysis['monthly_breakdown']}\n"
+        f"تصنيف الحركات: {bank_analysis['category_breakdown']}\n"
+        "لا تعتبر التحويلات والإيداعات الأخرى راتبًا ثابتًا، ولا تستنتج ديونًا من المصروفات وحدها."
+        if bank_analysis else "لا يوجد كشف حساب بنكي مُحلّل؛ البيانات مُصرّح بها من العميل."
+    )
 
     prompt = f"""أنت محلل ائتمان في مؤسسة تمويل أردنية، تقيّم أهلية عميل لقرض جديد.
 
 بيانات العميل الحقيقية:
+{bank_context}
 - الدخل الشهري: {assessment_data['monthly_income']} دينار
-- إجمالي الالتزامات الشهرية الحالية (أقساط قائمة): {assessment_data['current_monthly_obligations']} دينار
+- مصدر الدخل الشهري: {assessment_data.get('income_source', 'self_reported')}
+- إجمالي الالتزامات الشهرية الحالية: {assessment_data['current_monthly_obligations']} دينار
 - نسبة الدين إلى الدخل الحالية (قبل أي قرض جديد): {assessment_data['debt_to_income_percentage']}%
 - صافي الدخل المتاح بعد خصم جميع الالتزامات: {assessment_data['disposable_income']} دينار
 - عدد جهات التمويل النشطة حاليًا: {assessment_data['financing_institutions_count']}
@@ -1089,13 +1117,11 @@ def financial_summary(user: dict = Depends(get_current_user)):
 
     active_institutions = _active_institutions(profile)
     total_remaining_debt = sum(i["remaining_balance"] for i in active_institutions)
-    total_monthly_debt_payments = (
-        sum(i["monthly_installment"] for i in active_institutions)
-        if profile["data_source"] == "verified"
-        else profile["profile"].get("manual_monthly_obligations", 0)
+    monthly_income, total_monthly_debt_payments = _analysis_totals(profile)
+    debt_to_income_ratio = (
+        round(total_monthly_debt_payments / monthly_income * 100, 2)
+        if monthly_income > 0 else 0.0
     )
-    monthly_income = profile["profile"]["monthly_income"]
-    debt_to_income_ratio = profile["debt_to_income_percentage"] or 0.0
 
     return {
         "totalMonthlyIncome": round(monthly_income, 2),

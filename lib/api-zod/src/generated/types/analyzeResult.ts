@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalyzeResultBankAnalysis } from './analyzeResultBankAnalysis';
+import type { AnalyzeResultIncomeSource } from './analyzeResultIncomeSource';
 import type { AnalyzeResultType } from './analyzeResultType';
 import type { BudgetBreakdownItem } from './budgetBreakdownItem';
 import type { DebtBreakdownItem } from './debtBreakdownItem';
@@ -23,4 +25,7 @@ export interface AnalyzeResult {
   debtToIncomeRatio?: number;
   budgetBreakdown?: BudgetBreakdownItem[];
   insights?: string[];
+  incomeSource?: AnalyzeResultIncomeSource;
+  /** Aggregated analysis of the customer's bank statements, from the same stored transactions as the admin analysis. */
+  bankAnalysis?: AnalyzeResultBankAnalysis;
 }

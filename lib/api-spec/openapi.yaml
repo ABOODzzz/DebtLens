@@ -1214,6 +1214,42 @@ components:
           type: array
           items:
             type: string
+        incomeSource:
+          type: string
+          enum: [bank_salary, self_reported, missing]
+        bankAnalysis:
+          type: object
+          description: Aggregated analysis of the customer's bank statements, from the same stored transactions as the admin analysis.
+          required: [summary, monthly_breakdown, category_breakdown]
+          properties:
+            summary:
+              type: object
+              required: [total_credits, total_debits, net, transaction_count]
+              properties:
+                total_credits:
+                  type: number
+                total_debits:
+                  type: number
+                net:
+                  type: number
+                transaction_count:
+                  type: integer
+            monthly_breakdown:
+              type: array
+              items:
+                type: object
+                required: [month, credit, debit]
+                properties:
+                  month:
+                    type: string
+                  credit:
+                    type: number
+                  debit:
+                    type: number
+            category_breakdown:
+              type: array
+              items:
+                $ref: "#/components/schemas/BudgetBreakdownItem"
     RestructureStep:
       type: object
       required:

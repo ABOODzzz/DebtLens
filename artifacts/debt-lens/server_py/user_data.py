@@ -53,6 +53,14 @@ def _normalize_statement_transactions(
     for raw in raw_transactions or []:
         description = raw.get("description", "")
         category = raw.get("type") or classify_transaction(description)
+        # Admin bank extraction stores credit/debit plus a separate category;
+        # salary credits are income, but transfers/other credits are not salary.
+        if category == "credit" and raw.get("category") == "salary":
+            category = "income"
+        elif category == "installment":
+            category = "repayment"
+        elif category == "disbursement":
+            category = "loan"
         normalized.append(
             {
                 "statementId": statement_id,
@@ -159,6 +167,10 @@ def get_user_financial_profile(uid: str) -> dict:
     # Keyed by lowercased institution name so multiple statements from the
     # same lender aggregate into one breakdown entry.
     institution_totals: dict[str, dict] = {}
+    bank_months: dict[str, dict[str, float]] = {}
+    bank_categories: dict[str, float] = {}
+    bank_totals = {"total_credits": 0.0, "total_debits": 0.0, "transaction_count": 0}
+    salary_by_month: dict[str, float] = {}
 
     for statement_id, statement in statements_map.items():
         if not isinstance(statement, dict):
@@ -194,6 +206,25 @@ def get_user_financial_profile(uid: str) -> dict:
                 statement_id, institution_name, statement.get("transactions")
             )
         )
+        if statement.get("statementType") == "bank":
+            # Derive the customer view from the exact stored transactions
+            # behind the admin view; legacy statements have the same shape.
+            for tx in statement.get("transactions") or []:
+                if not isinstance(tx, dict) or tx.get("type") not in ("credit", "debit"):
+                    continue
+                amount = abs(float(tx.get("amount") or 0))
+                month = str(tx.get("date") or "")[:7]
+                if len(month) != 7 or month[4] != "-" or not month.replace("-", "").isdigit():
+                    month = "unknown"
+                direction = tx["type"]
+                bucket = bank_months.setdefault(month, {"credit": 0.0, "debit": 0.0})
+                bucket[direction] += amount
+                bank_totals["total_credits" if direction == "credit" else "total_debits"] += amount
+                bank_totals["transaction_count"] += 1
+                category = str(tx.get("category") or "other")
+                bank_categories[category] = bank_categories.get(category, 0.0) + amount
+                if direction == "credit" and category == "salary" and month != "unknown":
+                    salary_by_month[month] = salary_by_month.get(month, 0.0) + amount
 
     institution_breakdown = [
         {
@@ -211,10 +242,14 @@ def get_user_financial_profile(uid: str) -> dict:
     if has_statements:
         data_source = "verified"
         risk_metrics = compute_risk_metrics(all_transactions)
-        # Prefer real transaction-derived income; fall back to the
-        # self-reported salary if the statements didn't include any income
-        # transactions (e.g. loan-only statements).
-        effective_income = risk_metrics["total_income"] or monthly_income
+        # Normalize multiple salary months; never count transfers/other
+        # credits or loan disbursements as recurring income.
+        bank_salary = (
+            round(sum(salary_by_month.values()) / len(salary_by_month), 2)
+            if salary_by_month else 0.0
+        )
+        effective_income = bank_salary or monthly_income
+        income_source = "bank_salary" if bank_salary else ("self_reported" if monthly_income else "missing")
         debt_to_income_percentage = (
             round((total_monthly_installments / effective_income) * 100, 2)
             if effective_income > 0
@@ -223,6 +258,8 @@ def get_user_financial_profile(uid: str) -> dict:
         stacking_flag = risk_metrics["stacking_flag"] or len(institutions_with_balance) >= 2
     elif monthly_income > 0 or declared_financing_companies:
         data_source = "self_reported"
+        effective_income = monthly_income
+        income_source = "self_reported"
         debt_to_income_percentage = (
             round((manual_monthly_obligations / monthly_income) * 100, 2)
             if monthly_income > 0
@@ -232,6 +269,8 @@ def get_user_financial_profile(uid: str) -> dict:
         stacking_flag = len(declared_set) >= 2
     else:
         data_source = "none"
+        effective_income = monthly_income
+        income_source = "missing"
         debt_to_income_percentage = None
         stacking_flag = False
 
@@ -239,7 +278,8 @@ def get_user_financial_profile(uid: str) -> dict:
         "uid": uid,
         "data_source": data_source,
         "profile": {
-            "monthly_income": monthly_income,
+            "monthly_income": effective_income,
+            "income_source": income_source,
             "employment_status": employment_status,
             "has_own_business": has_own_business,
             "business_info": business_info,
@@ -256,4 +296,18 @@ def get_user_financial_profile(uid: str) -> dict:
         "debt_to_income_percentage": debt_to_income_percentage,
         "stacking_flag": stacking_flag,
         "institution_breakdown": institution_breakdown,
+        "bank_analysis": {
+            "summary": {
+                **{key: round(value, 2) for key, value in bank_totals.items()},
+                "net": round(bank_totals["total_credits"] - bank_totals["total_debits"], 2),
+            },
+            "monthly_breakdown": [
+                {"month": month, **{key: round(value, 2) for key, value in values.items()}}
+                for month, values in sorted(bank_months.items())
+            ],
+            "category_breakdown": [
+                {"category": category, "amount": round(amount, 2)}
+                for category, amount in sorted(bank_categories.items(), key=lambda item: -item[1])
+            ],
+        } if bank_totals["transaction_count"] else None,
     }

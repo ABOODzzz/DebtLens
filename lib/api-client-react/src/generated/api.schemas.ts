@@ -120,6 +120,37 @@ export const AnalyzeResultType = {
   full: 'full',
 } as const;
 
+export type AnalyzeResultIncomeSource = typeof AnalyzeResultIncomeSource[keyof typeof AnalyzeResultIncomeSource];
+
+
+export const AnalyzeResultIncomeSource = {
+  bank_salary: 'bank_salary',
+  self_reported: 'self_reported',
+  missing: 'missing',
+} as const;
+
+export type AnalyzeResultBankAnalysisSummary = {
+  total_credits: number;
+  total_debits: number;
+  net: number;
+  transaction_count: number;
+};
+
+export type AnalyzeResultBankAnalysisMonthlyBreakdownItem = {
+  month: string;
+  credit: number;
+  debit: number;
+};
+
+/**
+ * Aggregated analysis of the customer's bank statements, from the same stored transactions as the admin analysis.
+ */
+export type AnalyzeResultBankAnalysis = {
+  summary: AnalyzeResultBankAnalysisSummary;
+  monthly_breakdown: AnalyzeResultBankAnalysisMonthlyBreakdownItem[];
+  category_breakdown: BudgetBreakdownItem[];
+};
+
 export interface AnalyzeResult {
   /** True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted. */
   awaitingVerification: boolean;
@@ -134,6 +165,9 @@ export interface AnalyzeResult {
   debtToIncomeRatio?: number;
   budgetBreakdown?: BudgetBreakdownItem[];
   insights?: string[];
+  incomeSource?: AnalyzeResultIncomeSource;
+  /** Aggregated analysis of the customer's bank statements, from the same stored transactions as the admin analysis. */
+  bankAnalysis?: AnalyzeResultBankAnalysis;
 }
 
 export interface RestructureStep {

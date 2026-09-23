@@ -112,7 +112,7 @@ function DashboardContent() {
             </p>
           </div>
         )}
-        {!isVerified && summary.totalMonthlyIncome <= 0 && (
+        {summary.totalMonthlyIncome <= 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-primary">
             <span>{t("dashboard.obligations.missingIncome")}</span>
             <Button size="sm" onClick={() => setActiveDialog("full-analysis")}>
@@ -875,6 +875,12 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
        data && (
          <div className="space-y-6">
            <p className="text-lg leading-relaxed text-primary">{data.summary}</p>
+           {data.bankAnalysis && (
+             <p className="text-sm rounded-lg border border-secondary/30 bg-secondary/5 p-3">
+               {t("dashboard.bankAnalysis.verifiedData")}
+               {data.incomeSource !== "bank_salary" && ` ${t("dashboard.bankAnalysis.declaredIncome")}`}
+             </p>
+           )}
            
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
              <div className="p-4 bg-muted/30 rounded-lg">
@@ -895,7 +901,56 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
              </div>
            </div>
 
-           <div className="grid md:grid-cols-2 gap-5">
+           {data.bankAnalysis && (
+             <>
+               <h4 className="font-bold text-primary">{t("dashboard.bankAnalysis.title")}</h4>
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                 {([
+                   ["credits", data.bankAnalysis.summary.total_credits],
+                   ["debits", data.bankAnalysis.summary.total_debits],
+                   ["net", data.bankAnalysis.summary.net],
+                   ["transactions", data.bankAnalysis.summary.transaction_count],
+                 ] as const).map(([key, value]) => (
+                   <div key={key} className="rounded-xl bg-muted/30 border p-4">
+                     <p className="text-xs text-muted-foreground">{t(`dashboard.bankAnalysis.${key}`)}</p>
+                     <p className="text-lg font-bold text-primary">
+                       {Number(value).toLocaleString(language === "ar" ? "ar-JO" : "en-US")}
+                       {key !== "transactions" && ` ${t("common.currency")}`}
+                     </p>
+                   </div>
+                 ))}
+               </div>
+               <div className="grid md:grid-cols-2 gap-5">
+                 <div className="rounded-xl border p-4">
+                   <h4 className="font-bold mb-3">{t("dashboard.bankAnalysis.monthlyFlow")}</h4>
+                   <div className="h-72">
+                     <ResponsiveContainer width="100%" height="100%">
+                       <BarChart data={data.bankAnalysis.monthly_breakdown}>
+                         <CartesianGrid strokeDasharray="3 3" />
+                         <XAxis dataKey="month" /><YAxis /><Tooltip /><Legend />
+                         <Bar dataKey="credit" name={t("dashboard.bankAnalysis.credits")} fill="#17365D" />
+                         <Bar dataKey="debit" name={t("dashboard.bankAnalysis.debits")} fill="#EAB308" />
+                       </BarChart>
+                     </ResponsiveContainer>
+                   </div>
+                 </div>
+                 <div className="rounded-xl border p-4">
+                   <h4 className="font-bold mb-3">{t("dashboard.bankAnalysis.categories")}</h4>
+                   <div className="h-72">
+                     <ResponsiveContainer width="100%" height="100%">
+                       <RechartsPieChart>
+                         <Pie data={data.bankAnalysis.category_breakdown} dataKey="amount" nameKey="category" innerRadius={50} outerRadius={85}>
+                           {data.bankAnalysis.category_breakdown.map((_: unknown, index: number) => <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                         </Pie>
+                         <Tooltip /><Legend />
+                       </RechartsPieChart>
+                     </ResponsiveContainer>
+                   </div>
+                 </div>
+               </div>
+             </>
+           )}
+           {!data.bankAnalysis && <div className="grid md:grid-cols-2 gap-5">
              <div className="rounded-xl border p-4 h-72">
                <ResponsiveContainer width="100%" height="100%">
                  <BarChart data={[
@@ -922,7 +977,7 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
                  </RechartsPieChart>
                </ResponsiveContainer>
              </div>
-           </div>
+           </div>}
 
            <div>
               <h4 className="font-bold mb-3">{t("dashboard.dialogs.breakdown")}</h4>
@@ -1074,9 +1129,9 @@ function EligibilityDialog({ onClose }: { onClose: () => void }) {
   const { t, language } = useLanguage();
   const check = useAssessLoanEligibility();
   
-  useState(() => {
+  useEffect(() => {
     check.mutate();
-  });
+  }, []);
 
   return (
     <DialogWrapper title={t("dashboard.dialogs.eligibility")} isOpen={true} onClose={onClose}>

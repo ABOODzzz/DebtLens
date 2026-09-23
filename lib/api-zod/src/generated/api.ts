@@ -92,7 +92,25 @@ export const AnalyzeFinancesResponse = zod.object({
   "category": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "insights": zod.array(zod.string()).optional()
+  "insights": zod.array(zod.string()).optional(),
+  "incomeSource": zod.enum(['bank_salary', 'self_reported', 'missing']).optional(),
+  "bankAnalysis": zod.object({
+  "summary": zod.object({
+  "total_credits": zod.number(),
+  "total_debits": zod.number(),
+  "net": zod.number(),
+  "transaction_count": zod.number().int()
+}),
+  "monthly_breakdown": zod.array(zod.object({
+  "month": zod.string(),
+  "credit": zod.number(),
+  "debit": zod.number()
+})),
+  "category_breakdown": zod.array(zod.object({
+  "category": zod.string(),
+  "amount": zod.number()
+}))
+}).optional().describe('Aggregated analysis of the customer\'s bank statements, from the same stored transactions as the admin analysis.')
 })
 
 
