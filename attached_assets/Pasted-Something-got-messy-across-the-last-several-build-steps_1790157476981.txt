@@ -1,0 +1,23 @@
+Something got messy across the last several build steps — I think there's a mix of leftover Node/Express/React scaffolding, duplicated or conflicting files, and possibly broken wiring between the FastAPI backend and the three HTML templates (index.html, login.html, admin.html). I need you to do a full audit and clean it up rather than patching one symptom at a time.
+
+Go through the project and fix the following:
+
+1. **Remove all leftover Node/Express/React remnants** — no package.json-driven server, no /src React components, no Express routes. This should be a single FastAPI app serving Jinja2 templates. If any old server file is still running on a different port or intercepting requests, delete it.
+
+2. **Templates folder** — confirm index.html, login.html, and admin.html live in a single templates/ directory and are served correctly at "/", "/login", "/admin" via Jinja2Templates. There should be no duplicate copies of these files sitting elsewhere in the project (check for old versions in /public, /static, /src, or project root).
+
+3. **Static assets and Firebase config** — the Firebase config object is inline in each HTML file's <script> tag, which is fine, but make sure nothing is trying to fetch it from a separate config.js or .env exposed to the frontend incorrectly.
+
+4. **Endpoint paths** — go through every fetch() call in the three HTML files and confirm each one matches an actual registered FastAPI route exactly (path, method, and whether it expects an Authorization header). List any mismatches you find and fix them on the backend side, not by changing the frontend.
+
+5. **Auth dependencies** — confirm verify_firebase_token and verify_admin_token are defined once, imported correctly wherever used, and that every admin-only endpoint actually uses verify_admin_token (not the regular one by mistake).
+
+6. **Firebase Admin init** — make sure firebase_admin.initialize_app() is only called once (guard against re-initialization errors on hot reload), and that it reads FIREBASE_SERVICE_ACCOUNT_JSON from environment variables via Replit Secrets, not hardcoded.
+
+7. **requirements.txt** — verify it's complete and matches what's actually imported in the code (fastapi, uvicorn, jinja2, requests, anthropic, pandas, scikit-learn, python-multipart, firebase-admin). Remove anything unused.
+
+8. **Run configuration** — check the .replit run command actually starts uvicorn on 0.0.0.0 with the correct port and that there isn't a stale "npm start" or similar leftover command still configured.
+
+9. **Duplicate or orphaned functions** — scan main.py (or wherever the backend lives) for duplicated function definitions, unused imports, or leftover placeholder code from earlier iterations, and consolidate into one clean file (or clean modules if you're splitting it up).
+
+After cleaning this up, do a quick end-to-end sanity check: load "/", confirm it redirects to "/login" when logged out, and confirm the admin UID redirects to "/admin". Tell me what you found and fixed at each step rather than just saying "done."

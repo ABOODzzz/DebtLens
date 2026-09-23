@@ -3,7 +3,4 @@ uvicorn[standard]
 jinja2
 requests
 anthropic
-pandas
-scikit-learn
-python-multipart
 firebase-admin
