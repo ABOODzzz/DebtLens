@@ -18,6 +18,8 @@ row that has already been decided.
 
 import os
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -193,6 +195,8 @@ class FakeTransactionalDecisionDatabase:
         self.fail_history_insert = False
         self.commit_count = 0
         self.rollback_count = 0
+        self._decision_lock = threading.Lock()
+        self.update_barrier: threading.Barrier | None = None
 
     def connect(self, *args, **kwargs):
         return FakeTransactionalDecisionConnection(self)
@@ -204,6 +208,8 @@ class FakeTransactionalDecisionConnection:
         self.applications = deepcopy(database.applications)
         self.history = deepcopy(database.history)
         self._committed = False
+        self._decision_lock_held = False
+        self._mutation_applied = False
 
     def __enter__(self):
         return self
@@ -214,13 +220,21 @@ class FakeTransactionalDecisionConnection:
                 self.commit()
         else:
             self._database.rollback_count += 1
+            self._release_decision_lock()
         return False
 
     def commit(self):
-        self._database.applications = deepcopy(self.applications)
-        self._database.history = deepcopy(self.history)
+        if self._mutation_applied:
+            self._database.applications = deepcopy(self.applications)
+            self._database.history = deepcopy(self.history)
         self._database.commit_count += 1
         self._committed = True
+        self._release_decision_lock()
+
+    def _release_decision_lock(self):
+        if self._decision_lock_held:
+            self._database._decision_lock.release()
+            self._decision_lock_held = False
 
     def cursor(self, **kwargs):
         return FakeTransactionalDecisionCursor(self)
@@ -242,7 +256,15 @@ class FakeTransactionalDecisionCursor:
 
         if normalized_query.startswith("UPDATE loan_applications"):
             status_value, reason, application_id = params
-            row = self._connection.applications.get(application_id)
+            if self._connection._database.update_barrier is not None:
+                self._connection._database.update_barrier.wait()
+
+            self._connection._database._decision_lock.acquire()
+            self._connection._decision_lock_held = True
+            # A concurrent transaction may have committed after this
+            # connection was opened. Read the shared row while holding the
+            # simulated row lock so the status predicate is rechecked.
+            row = deepcopy(self._connection._database.applications.get(application_id))
             if "AND status = 'submitted'" in normalized_query:
                 matches = row is not None and row["status"] == "submitted"
             else:
@@ -252,9 +274,12 @@ class FakeTransactionalDecisionCursor:
                 row["status"] = status_value
                 row["admin_decision_reason"] = reason
                 row["updated_at"] = datetime.now(timezone.utc)
+                self._connection.applications[application_id] = row
                 self._last_row = deepcopy(row)
+                self._connection._mutation_applied = True
             else:
                 self._last_row = None
+                self._connection._release_decision_lock()
             return
 
         if normalized_query.startswith("INSERT INTO loan_application_decision_history"):
@@ -603,6 +628,49 @@ class TestLoanApplicationDecisionStore:
         assert database.history[0]["created_at"] < database.history[1]["created_at"]
         assert database.commit_count == 2
         assert database.rollback_count == 0
+
+    def test_competing_initial_decisions_commit_once_with_winning_admin(self, monkeypatch):
+        database = FakeTransactionalDecisionDatabase(_database_application_row("submitted"))
+        database.update_barrier = threading.Barrier(2)
+        self._patch_database(monkeypatch, database)
+        attempts = [
+            {
+                "status": "approved",
+                "reason": "approved by admin one",
+                "admin_uid": "admin-uid-one",
+            },
+            {
+                "status": "admin_rejected",
+                "reason": "rejected by admin two",
+                "admin_uid": "admin-uid-two",
+            },
+        ]
+
+        def submit_decision(attempt):
+            return loan_application_store.update_admin_decision(
+                1,
+                attempt["status"],
+                attempt["reason"],
+                attempt["admin_uid"],
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(submit_decision, attempts))
+
+        successful = [result for result in results if result is not None]
+        rejected = [result for result in results if result is None]
+        assert len(successful) == 1
+        assert len(rejected) == 1
+
+        winning_attempt = attempts[results.index(successful[0])]
+        assert database.applications[1]["status"] == winning_attempt["status"]
+        assert len(database.history) == 1
+        expected_decision = (
+            "rejected" if winning_attempt["status"] == "admin_rejected" else winning_attempt["status"]
+        )
+        assert database.history[0]["decision"] == expected_decision
+        assert database.history[0]["admin_uid"] == winning_attempt["admin_uid"]
+        assert database.history[0]["reason"] == winning_attempt["reason"]
 
 
 class TestAdminLoanApplicationRevise:
