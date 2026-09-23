@@ -84,6 +84,7 @@ def _empty_profile(uid: str, data_source: str) -> dict:
         "total_monthly_installments": 0.0,
         "debt_to_income_percentage": None,
         "stacking_flag": False,
+        "institution_breakdown": [],
     }
 
 
@@ -142,6 +143,9 @@ def get_user_financial_profile(uid: str) -> dict:
     total_loan_principal = 0.0
     total_monthly_installments = 0.0
     institutions_with_balance = set()
+    # Keyed by lowercased institution name so multiple statements from the
+    # same lender aggregate into one breakdown entry.
+    institution_totals: dict[str, dict] = {}
 
     for statement_id, statement in statements_map.items():
         if not isinstance(statement, dict):
@@ -155,14 +159,39 @@ def get_user_financial_profile(uid: str) -> dict:
         total_loan_principal += principal_amount
         total_monthly_installments += monthly_installment
 
+        institution_key = institution_name.strip().lower()
+        bucket = institution_totals.setdefault(
+            institution_key,
+            {
+                "institution_name": institution_name,
+                "principal_amount": 0.0,
+                "monthly_installment": 0.0,
+                "remaining_balance": 0.0,
+            },
+        )
+        bucket["principal_amount"] += principal_amount
+        bucket["monthly_installment"] += monthly_installment
+        bucket["remaining_balance"] += remaining_balance
+
         if remaining_balance > 0:
-            institutions_with_balance.add(institution_name.strip().lower())
+            institutions_with_balance.add(institution_key)
 
         all_transactions.extend(
             _normalize_statement_transactions(
                 statement_id, institution_name, statement.get("transactions")
             )
         )
+
+    institution_breakdown = [
+        {
+            "institution_name": bucket["institution_name"],
+            "principal_amount": round(bucket["principal_amount"], 2),
+            "monthly_installment": round(bucket["monthly_installment"], 2),
+            "remaining_balance": round(bucket["remaining_balance"], 2),
+            "has_remaining_balance": bucket["remaining_balance"] > 0,
+        }
+        for bucket in institution_totals.values()
+    ]
 
     has_statements = len(statements_map) > 0
 
@@ -206,4 +235,5 @@ def get_user_financial_profile(uid: str) -> dict:
         "total_monthly_installments": round(total_monthly_installments, 2),
         "debt_to_income_percentage": debt_to_income_percentage,
         "stacking_flag": stacking_flag,
+        "institution_breakdown": institution_breakdown,
     }

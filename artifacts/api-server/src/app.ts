@@ -29,6 +29,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api", router);
+// Mounted at /legacy-api (not /api) -- the /api path is now owned by the
+// FastAPI backend in artifacts/debt-lens/server_py. This service is kept
+// running only until its remaining routes are ported over or retired.
+app.use("/legacy-api", router);
 
 export default app;
