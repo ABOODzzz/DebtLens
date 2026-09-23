@@ -59,6 +59,39 @@ class AnalyzeInput(BaseModel):
     type: str
 
 
+class ManualObligation(BaseModel):
+    category: str
+    label: str
+    amount: float
+
+
+class ManualObligationsInput(BaseModel):
+    obligations: list[ManualObligation]
+
+
+def _manual_obligations(profile: dict) -> list[dict]:
+    return profile["profile"].get("manual_obligations") or []
+
+
+def _has_manual_analysis_data(profile: dict) -> bool:
+    return (
+        profile["profile"]["monthly_income"] > 0
+        and bool(profile["profile"].get("manual_obligations_declared"))
+    )
+
+
+def _analysis_totals(profile: dict) -> tuple[float, float]:
+    if profile["data_source"] == "verified":
+        metrics = finance.compute_risk_metrics(profile["transactions"])
+        income = profile["profile"]["monthly_income"] or metrics["total_income"]
+        obligations = profile["total_monthly_installments"] or metrics["total_repayments"]
+        return float(income or 0), float(obligations or 0)
+    return (
+        float(profile["profile"]["monthly_income"] or 0),
+        float(profile["profile"].get("manual_monthly_obligations") or 0),
+    )
+
+
 def _require_anthropic() -> None:
     if anthropic_client is None:
         raise HTTPException(
@@ -330,21 +363,88 @@ def headlines():
 def analyze(payload: AnalyzeInput, user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
-    if profile["data_source"] != "verified":
+    if profile["data_source"] != "verified" and not _has_manual_analysis_data(profile):
         return _awaiting_verification_response()
 
+    income, monthly_obligations = _analysis_totals(profile)
     risk_metrics = finance.compute_risk_metrics(profile["transactions"])
     active_institutions = _active_institutions(profile)
     total_remaining_debt = sum(i["remaining_balance"] for i in active_institutions)
+    debt_ratio = round((monthly_obligations / income) * 100, 2) if income > 0 else 0.0
+    manual_breakdown = [
+        {
+            "lenderName": item.get("label") or item.get("category") or "التزام شهري",
+            "remainingAmount": float(item.get("amount") or 0),
+            "startDate": "",
+            "estimatedMonthlyBurden": float(item.get("amount") or 0),
+        }
+        for item in _manual_obligations(profile)
+    ]
+    budget_breakdown = [
+        {
+            "category": item.get("label") or item.get("category") or "التزام",
+            "amount": round(float(item.get("amount") or 0), 2),
+        }
+        for item in _manual_obligations(profile)
+    ]
+    if income > 0:
+        budget_breakdown.append(
+            {"category": "المتاح بعد الالتزامات", "amount": round(max(income - monthly_obligations, 0), 2)}
+        )
 
     return {
         "awaitingVerification": False,
         "type": payload.type,
-        "summary": _build_analysis_summary(profile, total_remaining_debt),
-        "debtBreakdown": _build_debt_breakdown(profile),
+        "summary": (
+            _build_analysis_summary(profile, total_remaining_debt)
+            if profile["data_source"] == "verified"
+            else f"دخلك الشهري {income:,.2f} دينار، والتزاماتك الشهرية {monthly_obligations:,.2f} دينار، والمتاح بعد الالتزامات {max(income - monthly_obligations, 0):,.2f} دينار."
+        ),
+        "debtBreakdown": _build_debt_breakdown(profile) or manual_breakdown,
         "totalRemainingDebt": round(total_remaining_debt, 2),
-        "debtToIncomeRatio": profile["debt_to_income_percentage"] or 0.0,
+        "monthlyIncome": round(income, 2),
+        "monthlyObligations": round(monthly_obligations, 2),
+        "disposableIncome": round(max(income - monthly_obligations, 0), 2),
+        "debtToIncomeRatio": debt_ratio,
+        "budgetBreakdown": budget_breakdown,
         "insights": _build_analysis_insights(risk_metrics, profile),
+    }
+
+
+@router.post("/manual-obligations")
+def save_manual_obligations(payload: ManualObligationsInput, user: dict = Depends(get_current_user)):
+    cleaned = []
+    for item in payload.obligations:
+        if item.amount < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Obligation amounts cannot be negative.")
+        if item.amount == 0:
+            continue
+        cleaned.append(
+            {
+                "category": item.category.strip()[:40] or "other",
+                "label": item.label.strip()[:80] or item.category.strip()[:40] or "التزام شهري",
+                "amount": round(item.amount, 2),
+            }
+        )
+
+    try:
+        from firebase_admin import firestore
+        from firebase_client import get_firestore_client
+
+        get_firestore_client().collection("users").document(user["uid"]).set(
+            {
+                "manualObligations": cleaned,
+                "manualObligationsDeclared": True,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to save obligations.") from exc
+
+    return {
+        "obligations": cleaned,
+        "totalMonthlyObligations": round(sum(item["amount"] for item in cleaned), 2),
     }
 
 
@@ -386,10 +486,12 @@ def restructure(user: dict = Depends(get_current_user)):
 def advice(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
-    if profile["data_source"] != "verified":
+    if profile["data_source"] != "verified" and not _has_manual_analysis_data(profile):
         return _awaiting_verification_response()
 
     risk_metrics = finance.compute_risk_metrics(profile["transactions"])
+    income, monthly_obligations = _analysis_totals(profile)
+    disposable_income = max(income - monthly_obligations, 0)
     context = _build_restructuring_context(profile)
     restructuring_plan = context["restructuring_plan"] if context else None
 
@@ -410,13 +512,18 @@ def advice(user: dict = Depends(get_current_user)):
 - إجمالي الأقساط الشهرية: {risk_metrics['total_repayments']} دينار
 - نسبة الدين إلى الدخل: {risk_metrics['debt_to_income_percentage']}%
 - علامة تكديس القروض (أخذ قروض من عدة جهات): {"نعم" if risk_metrics['stacking_flag'] else "لا"}
+- الدخل الشهري المعتمد: {income} دينار
+- الالتزامات الشهرية الكاملة (قروض، إيجار، فواتير وغيرها): {monthly_obligations} دينار
+- المتاح بعد خصم جميع الالتزامات: {disposable_income} دينار
+- الحالة الوظيفية: {profile['profile']['employment_status']}
+- الالتزامات التي أدخلها المستخدم: {_manual_obligations(profile)}
 
 {plan_summary}
 
 مؤشرات السوق الأردني الحالية:
 {headlines}
 
-اكتب 4-5 أسطر فقط من النصيحة المالية باللهجة الأردنية العامية، بأسلوب مباشر وعملي ومتعاطف، بناءً على البيانات أعلاه فقط."""
+اكتب نصيحة مالية عملية باللهجة الأردنية العامية، بأسلوب مباشر ومتعاطف، مبنية على البيانات أعلاه فقط. أعطِ حلولًا تمنع العجز الشهري، وراعِ بشكل خاص أن الدخل قد يكون محدودًا أو العمل غير ثابت. اقترح أولويات واضحة لتخفيض الالتزامات وتكوين احتياطي طوارئ، ولا تقترح قرضًا جديدًا إذا كان المتاح بعد الالتزامات غير آمن."""
 
     try:
         message = anthropic_client.messages.create(
@@ -582,24 +689,21 @@ def _loan_assessment_data(profile: dict) -> dict:
     transactions -- while always keeping the real, self-reported employment
     and business fields since those aren't tied to statement verification.
     """
-    if profile["data_source"] == "verified":
-        transactions = profile["transactions"]
-        is_real_data = True
-        financing_institutions_count = profile["financing_institutions_with_balance"]
-    else:
-        transactions = finance.generate_demo_transactions()
-        is_real_data = False
-        financing_institutions_count = len(
-            profile["profile"]["declared_financing_companies"]
-        )
-
-    risk_metrics = finance.compute_risk_metrics(transactions)
+    income, obligations = _analysis_totals(profile)
+    is_real_data = profile["data_source"] == "verified"
+    financing_institutions_count = (
+        profile["financing_institutions_with_balance"]
+        if is_real_data
+        else len(profile["profile"]["declared_financing_companies"])
+    )
+    dti = round((obligations / income) * 100, 2) if income > 0 else 0.0
 
     return {
         "is_real_data": is_real_data,
-        "monthly_income": risk_metrics["total_income"],
-        "current_monthly_obligations": risk_metrics["total_repayments"],
-        "debt_to_income_percentage": risk_metrics["debt_to_income_percentage"] or 0.0,
+        "monthly_income": income,
+        "current_monthly_obligations": obligations,
+        "disposable_income": round(max(income - obligations, 0), 2),
+        "debt_to_income_percentage": dti,
         "financing_institutions_count": financing_institutions_count,
     }
 
@@ -704,6 +808,7 @@ def _generate_loan_assessment_via_claude(
 - الدخل الشهري: {assessment_data['monthly_income']} دينار
 - إجمالي الالتزامات الشهرية الحالية (أقساط قائمة): {assessment_data['current_monthly_obligations']} دينار
 - نسبة الدين إلى الدخل الحالية (قبل أي قرض جديد): {assessment_data['debt_to_income_percentage']}%
+- صافي الدخل المتاح بعد خصم جميع الالتزامات: {assessment_data['disposable_income']} دينار
 - عدد جهات التمويل النشطة حاليًا: {assessment_data['financing_institutions_count']}
 - الحالة الوظيفية: {employment_status}
 - {business_line}
@@ -979,7 +1084,11 @@ def financial_summary(user: dict = Depends(get_current_user)):
 
     active_institutions = _active_institutions(profile)
     total_remaining_debt = sum(i["remaining_balance"] for i in active_institutions)
-    total_monthly_debt_payments = sum(i["monthly_installment"] for i in active_institutions)
+    total_monthly_debt_payments = (
+        sum(i["monthly_installment"] for i in active_institutions)
+        if profile["data_source"] == "verified"
+        else profile["profile"].get("manual_monthly_obligations", 0)
+    )
     monthly_income = profile["profile"]["monthly_income"]
     debt_to_income_ratio = profile["debt_to_income_percentage"] or 0.0
 

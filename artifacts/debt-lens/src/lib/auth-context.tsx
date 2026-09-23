@@ -17,6 +17,8 @@ export interface UserProfile {
   hasOwnBusiness?: boolean;
   isRegisteredGuarantor?: boolean;
   debts?: { lenderName: string; startDate: string; remainingAmount: number }[];
+  manualObligations?: { category: string; label: string; amount: number }[];
+  manualObligationsDeclared?: boolean;
   kycPhotoPaths?: { idFront: string; idBack: string; selfie: string };
   profileCompleted?: boolean;
   reviewStatus?: ReviewStatus | null;

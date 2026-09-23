@@ -133,6 +133,18 @@ def get_user_financial_profile(uid: str) -> dict:
     has_own_business = bool(user_doc.get("hasOwnBusiness", False))
     business_info = user_doc.get("businessInfo") or {}
     declared_financing_companies = user_doc.get("declaredFinancingCompanies") or []
+    manual_obligations = user_doc.get("manualObligations") or []
+    manual_obligations_declared = bool(user_doc.get("manualObligationsDeclared", False))
+    if not isinstance(manual_obligations, list):
+        manual_obligations = []
+    manual_monthly_obligations = round(
+        sum(
+            float(item.get("amount", 0) or 0)
+            for item in manual_obligations
+            if isinstance(item, dict)
+        ),
+        2,
+    )
 
     # --- Admin-uploaded, AI-analyzed statements ------------------------------
     statements_map = user_doc.get("statements") or {}
@@ -211,7 +223,11 @@ def get_user_financial_profile(uid: str) -> dict:
         stacking_flag = risk_metrics["stacking_flag"] or len(institutions_with_balance) >= 2
     elif monthly_income > 0 or declared_financing_companies:
         data_source = "self_reported"
-        debt_to_income_percentage = None
+        debt_to_income_percentage = (
+            round((manual_monthly_obligations / monthly_income) * 100, 2)
+            if monthly_income > 0
+            else None
+        )
         declared_set = {c.strip().lower() for c in declared_financing_companies if c}
         stacking_flag = len(declared_set) >= 2
     else:
@@ -228,6 +244,9 @@ def get_user_financial_profile(uid: str) -> dict:
             "has_own_business": has_own_business,
             "business_info": business_info,
             "declared_financing_companies": declared_financing_companies,
+            "manual_obligations": manual_obligations,
+            "manual_monthly_obligations": manual_monthly_obligations,
+            "manual_obligations_declared": manual_obligations_declared,
         },
         "transactions": all_transactions,
         "statement_count": len(statements_map),

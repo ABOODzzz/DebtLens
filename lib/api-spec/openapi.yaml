@@ -145,6 +145,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /manual-obligations:
+    post:
+      operationId: saveManualObligations
+      tags: [finance]
+      summary: Save monthly obligations for a customer without a bank account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManualObligationsInput"
+      responses:
+        "200":
+          description: Saved monthly obligations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualObligationsResult"
+        "400":
+          description: Invalid obligation amount
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /restructure:
     post:
       operationId: getRestructurePlan
@@ -1090,6 +1122,43 @@ components:
         type:
           type: string
           enum: [transactions, full]
+    ManualObligation:
+      type: object
+      required: [category, label, amount]
+      properties:
+        category:
+          type: string
+        label:
+          type: string
+        amount:
+          type: number
+          minimum: 0
+    ManualObligationsInput:
+      type: object
+      required: [obligations]
+      properties:
+        obligations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManualObligation"
+    ManualObligationsResult:
+      type: object
+      required: [obligations, totalMonthlyObligations]
+      properties:
+        obligations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManualObligation"
+        totalMonthlyObligations:
+          type: number
+    BudgetBreakdownItem:
+      type: object
+      required: [category, amount]
+      properties:
+        category:
+          type: string
+        amount:
+          type: number
     DebtBreakdownItem:
       type: object
       required:
@@ -1129,8 +1198,18 @@ components:
             $ref: "#/components/schemas/DebtBreakdownItem"
         totalRemainingDebt:
           type: number
+        monthlyIncome:
+          type: number
+        monthlyObligations:
+          type: number
+        disposableIncome:
+          type: number
         debtToIncomeRatio:
           type: number
+        budgetBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetBreakdownItem"
         insights:
           type: array
           items:
@@ -1657,8 +1736,26 @@ components:
           type: ["number", "null"]
         remaining_balance:
           type: ["number", "null"]
+        interest_rate:
+          type: ["number", "null"]
+        start_date:
+          type: ["string", "null"]
+        end_date:
+          type: ["string", "null"]
+        payment_status:
+          type: ["string", "null"]
         file_url:
           type: ["string", "null"]
+        transaction_count:
+          type: integer
+        transactions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        derived:
+          type: object
+          additionalProperties: true
     AdminUserDetail:
       type: object
       required:

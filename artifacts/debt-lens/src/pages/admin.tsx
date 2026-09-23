@@ -27,9 +27,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw, History, Download } from "lucide-react";
+import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw, History, Download, Upload, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/lib/i18n/context";
+import { auth } from "@/lib/firebase";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from "recharts";
+
+const ANALYSIS_COLORS = ["#17365D", "#EAB308", "#0F766E", "#DC2626", "#7C3AED", "#0284C7", "#64748B"];
 
 export default function AdminPage() {
   const { t, dir } = useLanguage();
@@ -244,8 +248,45 @@ function PhotoTile({ label, url }: { label: string; url: string | null | undefin
 function UserDetailDialog({ uid, onClose }: { uid: string; onClose: () => void }) {
   const { t, language } = useLanguage();
   const detail = useGetAdminUserDetail(uid);
+  const [selectedStatement, setSelectedStatement] = useState<any | null>(null);
+  const [uploadingBank, setUploadingBank] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const uploadStatement = async (bankName: string, file: File) => {
+    setUploadingBank(bankName);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const form = new FormData();
+      form.append("uid", uid);
+      form.append("institution_name", bankName);
+      form.append("institution_type", "bank");
+      form.append("file", file);
+      const response = await fetch("/api/admin/analyze-statement-upload", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.detail || "Statement analysis failed");
+      }
+      const result = await response.json();
+      setSelectedStatement(result);
+      await detail.refetch();
+      toast({ title: t("admin.analysis.complete"), description: t("admin.analysis.completeDescription") });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t("admin.analysis.failed"),
+        description: error instanceof Error ? error.message : t("admin.common.tryAgain"),
+      });
+    } finally {
+      setUploadingBank(null);
+    }
+  };
 
   return (
+    <>
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -335,9 +376,54 @@ function UserDetailDialog({ uid, onClose }: { uid: string; onClose: () => void }
                 <h4 className="font-bold mb-2">{t("admin.detail.accounts")}</h4>
                 <div className="space-y-2">
                   {detail.data.financial.bank_accounts!.map((acc: any, i: number) => (
-                    <div key={i} className="p-3 bg-muted/30 rounded-lg text-sm flex justify-between">
-                      <span>{acc.bankName}</span>
-                      <span className="dir-ltr text-muted-foreground">{acc.accountNumber}</span>
+                    <div key={i} className="p-3 bg-muted/30 rounded-lg text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        className="text-start flex-1 hover:text-secondary transition-colors"
+                        onClick={() => {
+                          const statement = (detail.data!.statements as any[]).find(
+                            (item) => item.institution_name?.trim().toLowerCase() === acc.bankName?.trim().toLowerCase(),
+                          );
+                          if (statement) setSelectedStatement(statement);
+                        }}
+                      >
+                        <span className="font-bold block">{acc.bankName}</span>
+                        <span className="dir-ltr text-muted-foreground">{acc.accountNumber}</span>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        {(detail.data.statements as any[]).some(
+                          (item) => item.institution_name?.trim().toLowerCase() === acc.bankName?.trim().toLowerCase(),
+                        ) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedStatement(
+                              (detail.data!.statements as any[]).find(
+                                (item) => item.institution_name?.trim().toLowerCase() === acc.bankName?.trim().toLowerCase(),
+                              ),
+                            )}
+                          >
+                            <BarChart3 className="w-4 h-4 me-1" /> {t("admin.analysis.view")}
+                          </Button>
+                        )}
+                        <label className="inline-flex">
+                          <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif"
+                            className="sr-only"
+                            disabled={uploadingBank === acc.bankName}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) void uploadStatement(acc.bankName, file);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                          <span className="inline-flex h-9 cursor-pointer items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+                            {uploadingBank === acc.bankName ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : <Upload className="w-4 h-4 me-1" />}
+                            {t("admin.analysis.upload")}
+                          </span>
+                        </label>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -381,6 +467,89 @@ function UserDetailDialog({ uid, onClose }: { uid: string; onClose: () => void }
         )}
       </DialogContent>
     </Dialog>
+    {selectedStatement && (
+      <StatementAnalysisDialog
+        statement={selectedStatement}
+        onClose={() => setSelectedStatement(null)}
+      />
+    )}
+    </>
+  );
+}
+
+function StatementAnalysisDialog({ statement, onClose }: { statement: any; onClose: () => void }) {
+  const { t, language, dir } = useLanguage();
+  const locale = language === "ar" ? "ar-JO" : "en-US";
+  const derived = statement.derived || {};
+  const monthly = derived.monthly_breakdown || [];
+  const categories = derived.category_breakdown || [];
+  const summary = derived.summary || {};
+  const money = (value: unknown) => Number(value || 0).toLocaleString(locale);
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" dir={dir}>
+        <DialogHeader>
+          <DialogTitle>{t("admin.analysis.title")} — {statement.institution_name}</DialogTitle>
+          <DialogDescription>{t("admin.analysis.description")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <AnalysisMetric label={t("admin.analysis.credits")} value={`${money(summary.total_credits)} ${t("common.currency")}`} />
+            <AnalysisMetric label={t("admin.analysis.debits")} value={`${money(summary.total_debits)} ${t("common.currency")}`} />
+            <AnalysisMetric label={t("admin.analysis.net")} value={`${money(summary.net)} ${t("common.currency")}`} />
+            <AnalysisMetric label={t("admin.analysis.transactions")} value={summary.transaction_count ?? statement.transaction_count ?? 0} />
+          </div>
+          <div className="grid md:grid-cols-2 gap-5">
+            <div className="rounded-xl border p-4">
+              <h4 className="font-bold mb-4">{t("admin.analysis.monthlyFlow")}</h4>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthly}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="credit" name={t("admin.analysis.credits")} fill="#17365D" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="debit" name={t("admin.analysis.debits")} fill="#EAB308" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="rounded-xl border p-4">
+              <h4 className="font-bold mb-4">{t("admin.analysis.spendingBreakdown")}</h4>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={categories} dataKey="amount" nameKey="category" innerRadius={55} outerRadius={95} paddingAngle={2}>
+                      {categories.map((_: unknown, index: number) => <Cell key={index} fill={ANALYSIS_COLORS[index % ANALYSIS_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <AnalysisMetric label={t("admin.common.debtRatio")} value={statement.debt_to_income_percentage != null ? `${statement.debt_to_income_percentage}%` : "—"} />
+            <AnalysisMetric label={t("admin.detail.remaining")} value={`${money(statement.remaining_balance)} ${t("common.currency")}`} />
+            <AnalysisMetric label={t("admin.analysis.installment")} value={`${money(statement.monthly_installment)} ${t("common.currency")}`} />
+            <AnalysisMetric label={t("admin.analysis.interest")} value={statement.interest_rate != null ? `${statement.interest_rate}%` : "—"} />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AnalysisMetric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-xl bg-muted/40 border p-4">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <p className="text-lg font-bold text-primary">{value}</p>
+    </div>
   );
 }
 

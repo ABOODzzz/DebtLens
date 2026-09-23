@@ -7,10 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert, ShieldCheck, Users, BadgeCheck, Check, X, Wallet } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/lib/i18n/context";
+import { auth } from "@/lib/firebase";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart as RechartsPieChart, Pie, Cell, Legend } from "recharts";
+
+const CHART_COLORS = ["#17365D", "#EAB308", "#0F766E", "#DC2626", "#7C3AED", "#0284C7"];
 
 export default function DashboardPage() {
   const { profile } = useAuth();
@@ -737,38 +741,140 @@ const DialogWrapper = ({ title, isOpen, onClose, children }: { title: string, is
 };
 
 function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
+  const { profile } = useAuth();
   const { t, language } = useLanguage();
   const analysis = useAnalyzeFinances();
-  
-  // Auto-fetch on mount
-  useState(() => {
-    analysis.mutate({ data: { type: "full" } });
-  });
+  const needsManualObligations = profile?.hasBankAccount === false && !profile.manualObligationsDeclared;
+  const [collectingObligations, setCollectingObligations] = useState(needsManualObligations);
+  const [saving, setSaving] = useState(false);
+  const [obligations, setObligations] = useState([
+    { category: "rent", label: t("dashboard.obligations.rent"), amount: "" },
+    { category: "utilities", label: t("dashboard.obligations.utilities"), amount: "" },
+    { category: "transport", label: t("dashboard.obligations.transport"), amount: "" },
+    { category: "loans", label: t("dashboard.obligations.loans"), amount: "" },
+    { category: "family", label: t("dashboard.obligations.family"), amount: "" },
+    { category: "other", label: t("dashboard.obligations.other"), amount: "" },
+  ]);
+
+  useEffect(() => {
+    if (!needsManualObligations) analysis.mutate({ data: { type: "full" } });
+  }, []);
+
+  const saveObligations = async () => {
+    const clean = obligations
+      .map((item) => ({ ...item, amount: Number(item.amount || 0) }))
+      .filter((item) => item.amount > 0);
+    if (!clean.length) return;
+    setSaving(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch("/api/manual-obligations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ obligations: clean }),
+      });
+      if (!response.ok) throw new Error("Unable to save obligations");
+      setCollectingObligations(false);
+      analysis.mutate({ data: { type: "full" } });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const data = analysis.data as any;
 
   return (
     <DialogWrapper title={t("dashboard.dialogs.analysis")} isOpen={true} onClose={onClose}>
-      {analysis.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
+      {collectingObligations ? (
+        <div className="space-y-5">
+          <div className="rounded-xl border border-secondary/30 bg-secondary/5 p-4">
+            <h3 className="font-bold text-primary">{t("dashboard.obligations.title")}</h3>
+            <p className="text-sm text-muted-foreground mt-1">{t("dashboard.obligations.description")}</p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {obligations.map((item, index) => (
+              <div key={item.category}>
+                <Label htmlFor={`obligation-${item.category}`}>{item.label}</Label>
+                <Input
+                  id={`obligation-${item.category}`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={item.amount}
+                  onChange={(event) => setObligations((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, amount: event.target.value } : row))}
+                  placeholder="0"
+                  className="mt-1"
+                />
+              </div>
+            ))}
+          </div>
+          <Button className="w-full" disabled={saving} onClick={saveObligations}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : <Sparkles className="w-4 h-4 me-2" />}
+            {t("dashboard.obligations.analyze")}
+          </Button>
+        </div>
+      ) : analysis.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
        analysis.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
-       analysis.data?.awaitingVerification ? <AwaitingVerificationNotice message={analysis.data.message} /> :
-       analysis.data && (
+       data?.awaitingVerification ? <AwaitingVerificationNotice message={data.message} /> :
+       data && (
          <div className="space-y-6">
-           <p className="text-lg leading-relaxed text-primary">{analysis.data.summary}</p>
+           <p className="text-lg leading-relaxed text-primary">{data.summary}</p>
            
-           <div className="grid grid-cols-2 gap-4">
+           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
              <div className="p-4 bg-muted/30 rounded-lg">
                 <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.debtTotal")}</p>
-                <p className="text-xl font-bold">{(analysis.data.totalRemainingDebt ?? 0).toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
+                 <p className="text-xl font-bold">{(data.totalRemainingDebt ?? 0).toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
              </div>
              <div className="p-4 bg-muted/30 rounded-lg">
                 <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.burden")}</p>
-               <p className="text-xl font-bold text-secondary">{Math.round(analysis.data.debtToIncomeRatio ?? 0)}%</p>
+                <p className="text-xl font-bold text-secondary">{Math.round(data.debtToIncomeRatio ?? 0)}%</p>
+             </div>
+             <div className="p-4 bg-muted/30 rounded-lg">
+                <p className="text-sm text-muted-foreground">{t("dashboard.obligations.total")}</p>
+                <p className="text-xl font-bold">{(data.monthlyObligations ?? 0).toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
+             </div>
+             <div className="p-4 bg-muted/30 rounded-lg">
+                <p className="text-sm text-muted-foreground">{t("dashboard.obligations.disposable")}</p>
+                <p className="text-xl font-bold text-green-700">{(data.disposableIncome ?? 0).toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
+             </div>
+           </div>
+
+           <div className="grid md:grid-cols-2 gap-5">
+             <div className="rounded-xl border p-4 h-72">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={[
+                   { name: t("dashboard.kpi.income"), value: data.monthlyIncome ?? 0 },
+                   { name: t("dashboard.obligations.total"), value: data.monthlyObligations ?? 0 },
+                   { name: t("dashboard.obligations.disposable"), value: data.disposableIncome ?? 0 },
+                 ]}>
+                   <CartesianGrid strokeDasharray="3 3" />
+                   <XAxis dataKey="name" />
+                   <YAxis />
+                   <Tooltip />
+                   <Bar dataKey="value" fill="#17365D" radius={[5, 5, 0, 0]} />
+                 </BarChart>
+               </ResponsiveContainer>
+             </div>
+             <div className="rounded-xl border p-4 h-72">
+               <ResponsiveContainer width="100%" height="100%">
+                 <RechartsPieChart>
+                   <Pie data={data.budgetBreakdown ?? []} dataKey="amount" nameKey="category" innerRadius={50} outerRadius={85}>
+                     {(data.budgetBreakdown ?? []).map((_: unknown, index: number) => <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                   </Pie>
+                   <Tooltip />
+                   <Legend />
+                 </RechartsPieChart>
+               </ResponsiveContainer>
              </div>
            </div>
 
            <div>
               <h4 className="font-bold mb-3">{t("dashboard.dialogs.breakdown")}</h4>
              <div className="space-y-2">
-               {(analysis.data.debtBreakdown ?? []).map((d, i) => (
+               {(data.debtBreakdown ?? []).map((d: any, i: number) => (
                  <div key={i} className="flex justify-between items-center p-3 border rounded">
                    <span>{d.lenderName}</span>
                     <span className="font-bold">{d.remainingAmount.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</span>
@@ -777,11 +883,11 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
              </div>
            </div>
 
-           {(analysis.data.insights ?? []).length > 0 && (
+           {(data.insights ?? []).length > 0 && (
              <div>
                 <h4 className="font-bold mb-2">{t("dashboard.dialogs.insights")}</h4>
                <ul className="list-disc list-inside space-y-1 text-muted-foreground pr-4">
-                 {(analysis.data.insights ?? []).map((insight, i) => <li key={i}>{insight}</li>)}
+                 {(data.insights ?? []).map((insight: string, i: number) => <li key={i}>{insight}</li>)}
                </ul>
              </div>
            )}

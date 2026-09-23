@@ -47,7 +47,7 @@ _FILE_DOWNLOAD_TIMEOUT_SECONDS = 30
 _MAX_FILE_BYTES = 32 * 1024 * 1024  # 32 MB
 # Statements can run long (many pages, many transactions), so this gets a
 # generous output budget -- same as the other AI-vision endpoint (KYC).
-_STATEMENT_MAX_TOKENS = 16000
+_STATEMENT_MAX_TOKENS = 32000
 # How recent a final approved/admin_rejected decision must be for an admin to
 # still be able to revise it -- old enough to fix a misclick or a call made on
 # stale information, not so open-ended that settled cases can be relitigated.
@@ -760,7 +760,14 @@ def get_user_detail(uid: str, admin: dict = Depends(get_current_admin)):
             "principal_amount": statement.get("principalAmount"),
             "monthly_installment": statement.get("monthlyInstallment"),
             "remaining_balance": statement.get("remainingBalance"),
+            "interest_rate": statement.get("interestRate"),
+            "start_date": statement.get("startDate"),
+            "end_date": statement.get("endDate"),
+            "payment_status": statement.get("paymentStatus"),
             "file_url": statement.get("fileUrl"),
+            "transaction_count": len(statement.get("transactions") or []),
+            "transactions": statement.get("transactions") or [],
+            "derived": statement.get("derived") or {},
         }
         for statement_id, statement in statements_map.items()
         if isinstance(statement, dict)

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AnalyzeResultType } from './analyzeResultType';
+import type { BudgetBreakdownItem } from './budgetBreakdownItem';
 import type { DebtBreakdownItem } from './debtBreakdownItem';
 
 export interface AnalyzeResult {
@@ -16,6 +17,10 @@ export interface AnalyzeResult {
   summary?: string;
   debtBreakdown?: DebtBreakdownItem[];
   totalRemainingDebt?: number;
+  monthlyIncome?: number;
+  monthlyObligations?: number;
+  disposableIncome?: number;
   debtToIncomeRatio?: number;
+  budgetBreakdown?: BudgetBreakdownItem[];
   insights?: string[];
 }

@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminUserStatementDerived } from './adminUserStatementDerived';
+import type { AdminUserStatementTransactionsItem } from './adminUserStatementTransactionsItem';
 
 export interface AdminUserStatement {
   statement_id?: string;
@@ -19,5 +21,16 @@ export interface AdminUserStatement {
   /** @nullable */
   remaining_balance?: number | null;
   /** @nullable */
+  interest_rate?: number | null;
+  /** @nullable */
+  start_date?: string | null;
+  /** @nullable */
+  end_date?: string | null;
+  /** @nullable */
+  payment_status?: string | null;
+  /** @nullable */
   file_url?: string | null;
+  transaction_count?: number;
+  transactions?: AdminUserStatementTransactionsItem[];
+  derived?: AdminUserStatementDerived;
 }

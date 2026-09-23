@@ -52,6 +52,8 @@ import type {
   LoanApplicationInput,
   LoanApplicationReviseInput,
   LoanEligibilityResult,
+  ManualObligationsInput,
+  ManualObligationsResult,
   MarkAllNotificationsReadResult,
   MarkNotificationReadInput,
   MarkNotificationReadResult,
@@ -493,6 +495,94 @@ export const useAnalyzeFinances = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getAnalyzeFinancesMutationOptions(options));
+    }
+
+export const getSaveManualObligationsUrl = () => {
+
+
+
+
+  return `/api/manual-obligations`
+}
+
+/**
+ * @summary Save monthly obligations for a customer without a bank account
+ */
+export const saveManualObligations = async (manualObligationsInput: ManualObligationsInput, options?: Parameters<typeof customFetch>[1]): Promise<ManualObligationsResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ManualObligationsResult>(getSaveManualObligationsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(manualObligationsInput)
+  }
+);}
+
+
+
+
+
+export const getSaveManualObligationsMutationKey = () => ['saveManualObligations'] as const;
+
+export const getSaveManualObligationsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveManualObligations>>, TError,SaveManualObligationsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveManualObligations>>, TError,SaveManualObligationsMutationVariables, TContext> => {
+
+const mutationKey = getSaveManualObligationsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveManualObligations>>, SaveManualObligationsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveManualObligations(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveManualObligationsMutationResult = NonNullable<Awaited<ReturnType<typeof saveManualObligations>>>
+    export type SaveManualObligationsMutationBody = BodyType<ManualObligationsInput>
+    export type SaveManualObligationsMutationError = ErrorType<ErrorResponse>
+    export type SaveManualObligationsMutationVariables = {data: BodyType<ManualObligationsInput>}
+
+    /**
+ * @summary Save monthly obligations for a customer without a bank account
+ */
+export const useSaveManualObligations = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveManualObligations>>, TError,SaveManualObligationsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveManualObligations>>,
+        TError,
+        SaveManualObligationsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveManualObligationsMutationOptions(options));
     }
 
 export const getGetRestructurePlanUrl = () => {

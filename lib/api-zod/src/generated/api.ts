@@ -84,8 +84,44 @@ export const AnalyzeFinancesResponse = zod.object({
   "estimatedMonthlyBurden": zod.number().optional()
 })).optional(),
   "totalRemainingDebt": zod.number().optional(),
+  "monthlyIncome": zod.number().optional(),
+  "monthlyObligations": zod.number().optional(),
+  "disposableIncome": zod.number().optional(),
   "debtToIncomeRatio": zod.number().optional(),
+  "budgetBreakdown": zod.array(zod.object({
+  "category": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "insights": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Save monthly obligations for a customer without a bank account
+ */
+export const saveManualObligationsBodyObligationsItemAmountMin = 0;
+
+
+
+export const SaveManualObligationsBody = zod.object({
+  "obligations": zod.array(zod.object({
+  "category": zod.string(),
+  "label": zod.string(),
+  "amount": zod.number().min(saveManualObligationsBodyObligationsItemAmountMin)
+}))
+})
+
+export const saveManualObligationsResponseObligationsItemAmountMin = 0;
+
+
+
+export const SaveManualObligationsResponse = zod.object({
+  "obligations": zod.array(zod.object({
+  "category": zod.string(),
+  "label": zod.string(),
+  "amount": zod.number().min(saveManualObligationsResponseObligationsItemAmountMin)
+})),
+  "totalMonthlyObligations": zod.number()
 })
 
 
@@ -435,7 +471,14 @@ export const GetAdminUserDetailResponse = zod.object({
   "principal_amount": zod.number().nullish(),
   "monthly_installment": zod.number().nullish(),
   "remaining_balance": zod.number().nullish(),
-  "file_url": zod.string().nullish()
+  "interest_rate": zod.number().nullish(),
+  "start_date": zod.string().nullish(),
+  "end_date": zod.string().nullish(),
+  "payment_status": zod.string().nullish(),
+  "file_url": zod.string().nullish(),
+  "transaction_count": zod.number().int().optional(),
+  "transactions": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+  "derived": zod.record(zod.string(), zod.unknown()).optional()
 }))
 })
 
@@ -646,4 +689,5 @@ export const SubmitKycDecisionResponse = zod.object({
   "review_status": zod.enum(['approved', 'rejected']),
   "reason": zod.string()
 })
-// End of generated API definitions.
+
+

@@ -84,6 +84,27 @@ export interface AnalyzeInput {
   type: AnalyzeInputType;
 }
 
+export interface ManualObligation {
+  category: string;
+  label: string;
+  /** @minimum 0 */
+  amount: number;
+}
+
+export interface ManualObligationsInput {
+  obligations: ManualObligation[];
+}
+
+export interface ManualObligationsResult {
+  obligations: ManualObligation[];
+  totalMonthlyObligations: number;
+}
+
+export interface BudgetBreakdownItem {
+  category: string;
+  amount: number;
+}
+
 export interface DebtBreakdownItem {
   lenderName: string;
   remainingAmount: number;
@@ -107,7 +128,11 @@ export interface AnalyzeResult {
   summary?: string;
   debtBreakdown?: DebtBreakdownItem[];
   totalRemainingDebt?: number;
+  monthlyIncome?: number;
+  monthlyObligations?: number;
+  disposableIncome?: number;
   debtToIncomeRatio?: number;
+  budgetBreakdown?: BudgetBreakdownItem[];
   insights?: string[];
 }
 
@@ -435,6 +460,10 @@ export interface AdminUserFinancial {
   institution_breakdown?: AdminUserFinancialInstitutionBreakdownItem[];
 }
 
+export type AdminUserStatementTransactionsItem = { [key: string]: unknown };
+
+export type AdminUserStatementDerived = { [key: string]: unknown };
+
 export interface AdminUserStatement {
   statement_id?: string;
   /** @nullable */
@@ -448,7 +477,18 @@ export interface AdminUserStatement {
   /** @nullable */
   remaining_balance?: number | null;
   /** @nullable */
+  interest_rate?: number | null;
+  /** @nullable */
+  start_date?: string | null;
+  /** @nullable */
+  end_date?: string | null;
+  /** @nullable */
+  payment_status?: string | null;
+  /** @nullable */
   file_url?: string | null;
+  transaction_count?: number;
+  transactions?: AdminUserStatementTransactionsItem[];
+  derived?: AdminUserStatementDerived;
 }
 
 export type AdminUserDetailReviewStatus = typeof AdminUserDetailReviewStatus[keyof typeof AdminUserDetailReviewStatus];
@@ -714,3 +754,4 @@ export interface KycDecisionResult {
   review_status: KycDecisionResultReviewStatus;
   reason: string;
 }
+
