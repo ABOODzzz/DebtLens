@@ -344,6 +344,228 @@ def consolidation_request(user: dict = Depends(get_current_user)):
     }
 
 
+# ---------------------------------------------------------------------------
+# AI loan eligibility assessment
+#
+# Unlike the other endpoints above, this one never blocks on
+# "awaiting_verification" -- a user with only self-reported onboarding data
+# (or none at all) still gets an assessment, just based on synthetic demo
+# transactions instead of real statement data. The response always says
+# which kind of data it was based on.
+#
+# The 40-45% debt-to-income ceiling is a hard business rule: Claude is asked
+# to respect it, but the server never trusts that alone -- the recommended
+# installment/total repayment are always recomputed from the amortization
+# formula, and the resulting post-loan DTI is checked again before
+# eligibility is finalized.
+# ---------------------------------------------------------------------------
+_LOAN_ASSESSMENT_MAX_TOKENS = 1024
+_LOAN_ASSESSMENT_DTI_CEILING_PERCENT = 45.0
+_RISK_TIERS_ARABIC = {"منخفض", "متوسط", "مرتفع"}
+
+
+def _loan_assessment_data(profile: dict) -> dict:
+    """
+    Decide what income/obligation figures to feed the assessment: real,
+    statement-derived numbers when verified, otherwise synthetic demo
+    transactions -- while always keeping the real, self-reported employment
+    and business fields since those aren't tied to statement verification.
+    """
+    if profile["data_source"] == "verified":
+        transactions = profile["transactions"]
+        is_real_data = True
+        financing_institutions_count = profile["financing_institutions_with_balance"]
+    else:
+        transactions = finance.generate_demo_transactions()
+        is_real_data = False
+        financing_institutions_count = len(
+            profile["profile"]["declared_financing_companies"]
+        )
+
+    risk_metrics = finance.compute_risk_metrics(transactions)
+
+    return {
+        "is_real_data": is_real_data,
+        "monthly_income": risk_metrics["total_income"],
+        "current_monthly_obligations": risk_metrics["total_repayments"],
+        "debt_to_income_percentage": risk_metrics["debt_to_income_percentage"] or 0.0,
+        "financing_institutions_count": financing_institutions_count,
+    }
+
+
+def _parse_loan_assessment_json(text: str) -> dict:
+    cleaned = text.strip()
+    cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
+    cleaned = re.sub(r"```$", "", cleaned).strip()
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not match:
+            raise
+        data = json.loads(match.group(0))
+
+    if not isinstance(data, dict):
+        raise ValueError("Loan assessment JSON is not an object")
+    if not isinstance(data.get("eligible"), bool):
+        raise ValueError("Missing or invalid 'eligible' in loan assessment JSON")
+    if not isinstance(data.get("recommendation"), str) or not data["recommendation"].strip():
+        raise ValueError("Missing or invalid 'recommendation' in loan assessment JSON")
+    if data.get("risk_tier") not in _RISK_TIERS_ARABIC:
+        data["risk_tier"] = "مرتفع" if not data.get("eligible") else "متوسط"
+
+    for field in ["recommended_amount", "interest_rate", "term_months", "monthly_installment", "total_repayment"]:
+        data.setdefault(field, None)
+
+    return data
+
+
+def _generate_loan_assessment_via_claude(assessment_data: dict, business_info: dict, employment_status: str, has_own_business: bool) -> dict:
+    headlines = "\n".join(f"- {h}" for h in market_data.get_market_headlines())
+    business_line = (
+        f"لدى المستخدم مشروعه الخاص. تفاصيل إضافية: {business_info}"
+        if has_own_business
+        else "لا يمتلك المستخدم مشروعًا خاصًا."
+    )
+
+    prompt = f"""أنت محلل ائتمان في مؤسسة تمويل أردنية، تقيّم أهلية عميل لقرض جديد.
+
+بيانات العميل الحقيقية:
+- الدخل الشهري: {assessment_data['monthly_income']} دينار
+- إجمالي الالتزامات الشهرية الحالية (أقساط قائمة): {assessment_data['current_monthly_obligations']} دينار
+- نسبة الدين إلى الدخل الحالية (قبل أي قرض جديد): {assessment_data['debt_to_income_percentage']}%
+- عدد جهات التمويل النشطة حاليًا: {assessment_data['financing_institutions_count']}
+- الحالة الوظيفية: {employment_status}
+- {business_line}
+
+مؤشرات السوق الأردني الحالية:
+{headlines}
+
+قاعدة صارمة يجب احترامها دائمًا: قسط أي قرض جديد يجب ألا يرفع نسبة الدين الإجمالية إلى الدخل (الالتزامات الحالية + القسط الجديد، مقسومة على الدخل الشهري) فوق ما يقارب 40-45%. \
+إذا كانت نسبة الدين الحالية قريبة من هذا الحد أو تجاوزته، أو كان الدخل غير كافٍ أو غير مستقر، فالعميل غير مؤهل حاليًا -- في هذه الحالة لا تقترح أي مبلغ إطلاقًا، واشرح بوضوح أن السبب هو تجاوز الحد الآمن، وانصح بسداد جزء من الديون الحالية أولاً بدلاً من اقتراح قرض جديد.
+
+أعد ردك بصيغة JSON فقط، بدون أي نص إضافي قبله أو بعده، وبالضبط بالشكل التالي:
+{{
+  "eligible": true | false,
+  "risk_tier": "منخفض" | "متوسط" | "مرتفع",
+  "recommended_amount": رقم أو null إذا غير مؤهل,
+  "interest_rate": رقم (نسبة سنوية مئوية) أو null إذا غير مؤهل,
+  "term_months": رقم صحيح بالأشهر أو null إذا غير مؤهل,
+  "monthly_installment": رقم أو null إذا غير مؤهل,
+  "total_repayment": رقم أو null إذا غير مؤهل,
+  "recommendation": "3-4 أسطر باللهجة الأردنية العامية، بأسلوب ودي ومباشر، تشرح القرار وتقدم نصيحة عملية"
+}}"""
+
+    message = anthropic_client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=_LOAN_ASSESSMENT_MAX_TOKENS,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = _extract_response_text(message)
+    return _parse_loan_assessment_json(text)
+
+
+def _enforce_dti_ceiling(verdict: dict, assessment_data: dict) -> dict:
+    """
+    Never trust the model's own arithmetic or its self-reported eligibility
+    for the one thing that actually matters here: recompute the installment
+    and total repayment from the amortization formula, then recheck the
+    resulting debt-to-income ratio against the hard ceiling before
+    finalizing eligibility.
+    """
+    income = assessment_data["monthly_income"]
+
+    if not verdict["eligible"] or income <= 0:
+        verdict["eligible"] = False
+        verdict["recommended_amount"] = None
+        verdict["interest_rate"] = None
+        verdict["term_months"] = None
+        verdict["monthly_installment"] = None
+        verdict["total_repayment"] = None
+        return verdict
+
+    try:
+        amount = float(verdict["recommended_amount"])
+        annual_rate_percent = float(verdict["interest_rate"])
+        term_months = int(verdict["term_months"])
+        if amount <= 0 or term_months <= 0 or not (0 < annual_rate_percent < 60):
+            raise ValueError("out of sane bounds")
+    except (TypeError, ValueError):
+        # The model said "eligible" but didn't give us usable numbers to
+        # verify -- treat as not eligible rather than guessing.
+        verdict["eligible"] = False
+        verdict["recommended_amount"] = None
+        verdict["interest_rate"] = None
+        verdict["term_months"] = None
+        verdict["monthly_installment"] = None
+        verdict["total_repayment"] = None
+        return verdict
+
+    monthly_installment = finance.calculate_monthly_payment(amount, annual_rate_percent / 100, term_months)
+    projected_dti = (
+        (assessment_data["current_monthly_obligations"] + monthly_installment) / income
+    ) * 100
+
+    if projected_dti > _LOAN_ASSESSMENT_DTI_CEILING_PERCENT:
+        verdict["eligible"] = False
+        verdict["recommended_amount"] = None
+        verdict["interest_rate"] = None
+        verdict["term_months"] = None
+        verdict["monthly_installment"] = None
+        verdict["total_repayment"] = None
+        verdict["recommendation"] = (
+            "للأسف ما قدرنا نرشحلك مبلغ قرض جديد هلأ، لأنه راح يرفع نسبة التزاماتك الشهرية "
+            "فوق الحد الآمن مقارنة بدخلك. الأفضل تركز على تسديد جزء من التزاماتك الحالية أولاً، "
+            "وبعدها نقدر نعيد تقييم أهليتك لقرض جديد."
+        )
+        return verdict
+
+    verdict["recommended_amount"] = round(amount, 2)
+    verdict["interest_rate"] = round(annual_rate_percent, 2)
+    verdict["term_months"] = term_months
+    verdict["monthly_installment"] = monthly_installment
+    verdict["total_repayment"] = round(monthly_installment * term_months, 2)
+    return verdict
+
+
+@router.get("/ai-loan-assessment")
+def ai_loan_assessment(user: dict = Depends(get_current_user)):
+    profile = _load_profile(user["uid"])
+    _require_anthropic()
+
+    assessment_data = _loan_assessment_data(profile)
+
+    try:
+        verdict = _generate_loan_assessment_via_claude(
+            assessment_data,
+            business_info=profile["profile"]["business_info"],
+            employment_status=profile["profile"]["employment_status"],
+            has_own_business=profile["profile"]["has_own_business"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("AI loan assessment generation failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to generate a loan assessment right now. Please try again shortly.",
+        ) from exc
+
+    verdict = _enforce_dti_ceiling(verdict, assessment_data)
+
+    return {
+        "eligible": verdict["eligible"],
+        "risk_tier": verdict["risk_tier"],
+        "recommended_amount": verdict["recommended_amount"],
+        "interest_rate": verdict["interest_rate"],
+        "term_months": verdict["term_months"],
+        "monthly_installment": verdict["monthly_installment"],
+        "total_repayment": verdict["total_repayment"],
+        "recommendation": verdict["recommendation"],
+        "based_on_real_data": assessment_data["is_real_data"],
+        "current_debt_to_income_percentage": assessment_data["debt_to_income_percentage"],
+    }
+
+
 @router.get("/financial-summary")
 def financial_summary(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
