@@ -80,6 +80,105 @@ def _active_institutions(profile: dict) -> list[dict]:
     ]
 
 
+def _effective_income(profile: dict, risk_metrics: dict) -> float:
+    """Real, transaction-derived income when available, else self-reported."""
+    return risk_metrics["total_income"] or profile["profile"]["monthly_income"]
+
+
+def _lender_start_date(transactions: list[dict], institution_name: str) -> str:
+    """Earliest transaction date on record for one lender, or "" if unknown."""
+    dates = [
+        t["date"]
+        for t in transactions
+        if t.get("institutionName") == institution_name and t.get("date")
+    ]
+    return min(dates) if dates else ""
+
+
+def _build_debt_breakdown(profile: dict) -> list[dict]:
+    """Per-lender breakdown (DebtBreakdownItem) for institutions still owed money."""
+    return [
+        {
+            "lenderName": institution["institution_name"],
+            "remainingAmount": institution["remaining_balance"],
+            "startDate": _lender_start_date(
+                profile["transactions"], institution["institution_name"]
+            ),
+            "estimatedMonthlyBurden": institution["monthly_installment"],
+        }
+        for institution in _active_institutions(profile)
+    ]
+
+
+def _build_analysis_insights(risk_metrics: dict, profile: dict) -> list[str]:
+    """Plain-language Arabic takeaways from the computed risk metrics."""
+    insights: list[str] = []
+    dti = profile["debt_to_income_percentage"]
+
+    if dti is not None:
+        if dti >= 50:
+            insights.append(
+                f"نسبة الدين إلى الدخل مرتفعة جدًا ({dti}%)، مما يشكل خطرًا ماليًا كبيرًا."
+            )
+        elif dti >= 35:
+            insights.append(
+                f"نسبة الدين إلى الدخل ({dti}%) أعلى من المعدل الآمن الموصى به."
+            )
+        else:
+            insights.append(f"نسبة الدين إلى الدخل ({dti}%) ضمن الحدود الآمنة.")
+
+    if risk_metrics["stacking_flag"]:
+        insights.append(
+            "تم رصد اقتراض من أكثر من جهة تمويل في نفس الفترة، وهو مؤشر تكديس ديون."
+        )
+
+    if profile["financing_institutions_with_balance"] >= 3:
+        insights.append(
+            f"لديك التزامات نشطة مع {profile['financing_institutions_with_balance']} جهات تمويل مختلفة."
+        )
+
+    if not insights:
+        insights.append("وضعك المالي مستقر حاليًا بناءً على البيانات المتاحة.")
+
+    return insights
+
+
+def _build_analysis_summary(profile: dict, total_remaining_debt: float) -> str:
+    """One-paragraph Arabic summary of the customer's overall debt picture."""
+    dti = profile["debt_to_income_percentage"]
+    dti_text = f"{dti}%" if dti is not None else "غير متوفرة"
+    return (
+        f"بناءً على تحليل بياناتك المالية، يبلغ إجمالي دينك المتبقي "
+        f"{total_remaining_debt:,.2f} دينار موزعًا على "
+        f"{profile['financing_institutions_with_balance']} جهة تمويل، "
+        f"بنسبة دين إلى دخل {dti_text}."
+    )
+
+
+def _pick_recommended_option(restructuring_plan: dict) -> dict:
+    """The restructuring option with the largest monthly savings for the customer."""
+    return max(restructuring_plan["options"], key=lambda option: option["monthly_savings"])
+
+
+def _build_restructuring_steps(context: dict, recommended: dict) -> list[dict]:
+    """One RestructureStep per active lender, describing the recommended option."""
+    is_consolidate = recommended["id"] == "consolidate"
+    action_label = "توحيد القروض" if is_consolidate else "تمديد فترة السداد"
+    verb = "دمج" if is_consolidate else "تمديد"
+
+    return [
+        {
+            "lenderName": institution["institution_name"],
+            "action": action_label,
+            "detail": (
+                f"سيتم {verb} الرصيد المتبقي ({institution['remaining_balance']:,.2f} دينار) "
+                f"ضمن الخطة الجديدة على مدى {recommended['term_months']} شهرًا."
+            ),
+        }
+        for institution in context["institution_breakdown"]
+    ]
+
+
 def _build_restructuring_context(profile: dict) -> dict | None:
     """
     Build the loan breakdown + restructuring plan for a verified profile.
@@ -233,12 +332,17 @@ def analyze(payload: AnalyzeInput, user: dict = Depends(get_current_user)):
         return _awaiting_verification_response()
 
     risk_metrics = finance.compute_risk_metrics(profile["transactions"])
+    active_institutions = _active_institutions(profile)
+    total_remaining_debt = sum(i["remaining_balance"] for i in active_institutions)
 
     return {
         "awaitingVerification": False,
         "type": payload.type,
-        "transactions": profile["transactions"],
-        "risk_metrics": risk_metrics,
+        "summary": _build_analysis_summary(profile, total_remaining_debt),
+        "debtBreakdown": _build_debt_breakdown(profile),
+        "totalRemainingDebt": round(total_remaining_debt, 2),
+        "debtToIncomeRatio": profile["debt_to_income_percentage"] or 0.0,
+        "insights": _build_analysis_insights(risk_metrics, profile),
     }
 
 
@@ -253,10 +357,26 @@ def restructure(user: dict = Depends(get_current_user)):
     if context is None:
         return _awaiting_verification_response()
 
+    risk_metrics = finance.compute_risk_metrics(profile["transactions"])
+    income = _effective_income(profile, risk_metrics)
+    restructuring_plan = context["restructuring_plan"]
+    recommended = _pick_recommended_option(restructuring_plan)
+
+    current_monthly_burden = restructuring_plan["current_monthly_payment"]
+    target_monthly_burden = recommended["monthly_payment"]
+
     return {
         "awaitingVerification": False,
-        "institution_breakdown": context["institution_breakdown"],
-        "restructuring_plan": context["restructuring_plan"],
+        "currentMonthlyBurden": current_monthly_burden,
+        "targetMonthlyBurden": target_monthly_burden,
+        "currentDebtToIncomeRatio": (
+            round((current_monthly_burden / income) * 100, 2) if income > 0 else 0.0
+        ),
+        "targetDebtToIncomeRatio": (
+            round((target_monthly_burden / income) * 100, 2) if income > 0 else 0.0
+        ),
+        "months": recommended["term_months"],
+        "steps": _build_restructuring_steps(context, recommended),
     }
 
 
@@ -313,8 +433,7 @@ def advice(user: dict = Depends(get_current_user)):
     return {
         "awaitingVerification": False,
         "advice": advice_text,
-        "risk_metrics": risk_metrics,
-        "restructuring_plan": restructuring_plan,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
     }
 
 

@@ -30,3 +30,12 @@ share one contract) and update each one, not just the primary target.
 Also double check that the route's registered HTTP verb matches what the
 spec (and therefore the generated client) actually calls — a schema fix is
 invisible if the request never reaches the handler.
+
+**Separate bug found the same way:** even once the gating (awaitingVerification)
+path was fixed, the *verified* path can still return an internal-shaped
+payload (e.g. `{transactions, risk_metrics}`) instead of the OpenAPI schema's
+field names (e.g. `summary`, `debtBreakdown`, `totalRemainingDebt`,
+`debtToIncomeRatio`, `insights`) — TypeScript can't catch this because the
+generated client type is trusted, not verified against the actual runtime
+response. When touching a gated endpoint, check both branches (gated
+placeholder AND real-data response) against the schema, not just one.
