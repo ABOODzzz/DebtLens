@@ -147,3 +147,116 @@ export interface LoanEligibilityResult {
   currentDebtToIncomePercentage: number;
 }
 
+export type GuarantorRequestStatusStatus = typeof GuarantorRequestStatusStatus[keyof typeof GuarantorRequestStatusStatus];
+
+
+export const GuarantorRequestStatusStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  declined: 'declined',
+} as const;
+
+export interface GuarantorRequestStatus {
+  guarantorUid: string;
+  status: GuarantorRequestStatusStatus;
+  /** @nullable */
+  requestedAt?: string | null;
+  /** @nullable */
+  respondedAt?: string | null;
+  maxAmount: number;
+}
+
+export type IncomingGuarantorRequestStatus = typeof IncomingGuarantorRequestStatus[keyof typeof IncomingGuarantorRequestStatus];
+
+
+export const IncomingGuarantorRequestStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  declined: 'declined',
+} as const;
+
+export interface IncomingGuarantorRequest {
+  status: IncomingGuarantorRequestStatus;
+  /** @nullable */
+  requestedAt?: string | null;
+  maxAmount: number;
+}
+
+export type GuarantorStatusIncomingRequests = {[key: string]: IncomingGuarantorRequest};
+
+export interface GuarantorStatus {
+  outgoing_request?: GuarantorRequestStatus | null;
+  /** @nullable */
+  approved_guarantor_uid: string | null;
+  incoming_requests: GuarantorStatusIncomingRequests;
+}
+
+export type AdminUserReviewStatus = typeof AdminUserReviewStatus[keyof typeof AdminUserReviewStatus];
+
+
+export const AdminUserReviewStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+  no_submission: 'no_submission',
+} as const;
+
+export interface AdminUser {
+  uid: string;
+  name: string;
+  /** @nullable */
+  national_id?: string | null;
+  review_status: AdminUserReviewStatus;
+  /** @nullable */
+  review_reason?: string | null;
+  /** @nullable */
+  face_match?: boolean | null;
+  /** @nullable */
+  confidence?: number | null;
+  has_kyc_submission: boolean;
+  data_source: string;
+  /** @nullable */
+  debt_to_income_percentage?: number | null;
+  stacking_flag: boolean;
+  statement_count: number;
+  /** @nullable */
+  guarantor_uid?: string | null;
+  /** @nullable */
+  updated_at?: string | null;
+}
+
+export interface AdminUsersResponse {
+  user_count: number;
+  pending_count: number;
+  users: AdminUser[];
+}
+
+export type KycDecisionInputDecision = typeof KycDecisionInputDecision[keyof typeof KycDecisionInputDecision];
+
+
+export const KycDecisionInputDecision = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface KycDecisionInput {
+  uid: string;
+  decision: KycDecisionInputDecision;
+  /** @nullable */
+  note?: string | null;
+}
+
+export type KycDecisionResultReviewStatus = typeof KycDecisionResultReviewStatus[keyof typeof KycDecisionResultReviewStatus];
+
+
+export const KycDecisionResultReviewStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface KycDecisionResult {
+  uid: string;
+  review_status: KycDecisionResultReviewStatus;
+  reason: string;
+}
+

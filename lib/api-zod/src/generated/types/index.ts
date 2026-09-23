@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './adminUser';
+export * from './adminUserReviewStatus';
+export * from './adminUsersResponse';
 export * from './adviceResult';
 export * from './analyzeInput';
 export * from './analyzeInputType';
@@ -16,8 +19,18 @@ export * from './consolidationRequestResultStatus';
 export * from './debtBreakdownItem';
 export * from './errorResponse';
 export * from './financialSummary';
+export * from './guarantorRequestStatus';
+export * from './guarantorRequestStatusStatus';
+export * from './guarantorStatus';
+export * from './guarantorStatusIncomingRequests';
 export * from './headline';
 export * from './healthStatus';
+export * from './incomingGuarantorRequest';
+export * from './incomingGuarantorRequestStatus';
+export * from './kycDecisionInput';
+export * from './kycDecisionInputDecision';
+export * from './kycDecisionResult';
+export * from './kycDecisionResultReviewStatus';
 export * from './kycSubmitInput';
 export * from './kycSubmitInputProfile';
 export * from './kycSubmitResponse';

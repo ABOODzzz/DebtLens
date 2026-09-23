@@ -145,3 +145,65 @@ export const AssessLoanEligibilityResponse = zod.object({
 })
 
 
+/**
+ * Returns any outgoing guarantor request, the approved guarantor (if any), and incoming requests naming this user as guarantor.
+ * @summary Get the signed-in user's digital guarantor status
+ */
+export const GetGuarantorStatusResponse = zod.object({
+  "outgoing_request": zod.union([zod.object({
+  "guarantorUid": zod.string(),
+  "status": zod.enum(['pending', 'approved', 'declined']),
+  "requestedAt": zod.coerce.date().nullish(),
+  "respondedAt": zod.coerce.date().nullish(),
+  "maxAmount": zod.number()
+}),zod.null()]).optional(),
+  "approved_guarantor_uid": zod.string().nullable(),
+  "incoming_requests": zod.record(zod.string(), zod.object({
+  "status": zod.enum(['pending', 'approved', 'declined']),
+  "requestedAt": zod.coerce.date().nullish(),
+  "maxAmount": zod.number()
+}))
+})
+
+
+/**
+ * @summary List all users for the admin review dashboard
+ */
+export const ListAdminUsersResponse = zod.object({
+  "user_count": zod.number().int(),
+  "pending_count": zod.number().int(),
+  "users": zod.array(zod.object({
+  "uid": zod.string(),
+  "name": zod.string(),
+  "national_id": zod.string().nullish(),
+  "review_status": zod.enum(['pending', 'approved', 'rejected', 'no_submission']),
+  "review_reason": zod.string().nullish(),
+  "face_match": zod.boolean().nullish(),
+  "confidence": zod.number().nullish(),
+  "has_kyc_submission": zod.boolean(),
+  "data_source": zod.string(),
+  "debt_to_income_percentage": zod.number().nullish(),
+  "stacking_flag": zod.boolean(),
+  "statement_count": zod.number().int(),
+  "guarantor_uid": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Manually approve or reject a user's KYC review
+ */
+export const SubmitKycDecisionBody = zod.object({
+  "uid": zod.string(),
+  "decision": zod.enum(['approved', 'rejected']),
+  "note": zod.string().nullish()
+})
+
+export const SubmitKycDecisionResponse = zod.object({
+  "uid": zod.string(),
+  "review_status": zod.enum(['approved', 'rejected']),
+  "reason": zod.string()
+})
+
+

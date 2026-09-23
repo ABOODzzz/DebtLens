@@ -1,8 +1,8 @@
-import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility } from "@workspace/api-client-react";
+import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorStatus, GuarantorStatus } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert } from "lucide-react";
+import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -42,6 +42,7 @@ export default function DashboardPage() {
 function DashboardContent() {
   const { profile } = useAuth();
   const summaryQuery = useGetFinancialSummary();
+  const guarantorQuery = useGetGuarantorStatus();
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
 
   if (summaryQuery.isLoading) {
@@ -88,6 +89,12 @@ function DashboardContent() {
           <KpiCard title="نسبة عبء الدين" value={Math.round(summary.debtToIncomeRatio)} unit="%" highlight={summary.debtToIncomeRatio > 50} />
           <KpiCard title="عدد القروض النشطة" value={summary.activeLoansCount} unit="" isNumber />
         </div>
+
+        <GuarantorStatusCard
+          data={guarantorQuery.data}
+          isLoading={guarantorQuery.isLoading}
+          isError={guarantorQuery.isError}
+        />
 
         <h2 className="text-xl font-bold text-primary border-b pb-2">الخدمات الاستشارية المتاحة لك</h2>
         
@@ -142,6 +149,77 @@ function DashboardContent() {
       {activeDialog === 'consolidation' && <ConsolidationDialog onClose={() => setActiveDialog(null)} />}
       {activeDialog === 'eligibility' && <EligibilityDialog onClose={() => setActiveDialog(null)} />}
     </div>
+  );
+}
+
+// --- Guarantor Status Card ---
+function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorStatus; isLoading: boolean; isError: boolean }) {
+  if (isLoading) return null;
+  if (isError || !data) return null;
+
+  const { outgoing_request, approved_guarantor_uid, incoming_requests } = data;
+  const incomingList = Object.entries(incoming_requests || {});
+
+  if (!outgoing_request && !approved_guarantor_uid && incomingList.length === 0) {
+    return null;
+  }
+
+  const statusLabel = (status: string) =>
+    status === 'approved' ? 'تمت الموافقة' : status === 'declined' ? 'مرفوض' : 'قيد الانتظار';
+
+  const statusClass = (status: string) =>
+    status === 'approved' ? 'bg-green-100 text-green-700' :
+    status === 'declined' ? 'bg-red-100 text-red-700' :
+    'bg-yellow-100 text-yellow-700';
+
+  return (
+    <Card className="border-secondary/20 bg-secondary/5">
+      <CardContent className="p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-secondary/20 flex items-center justify-center text-primary shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-primary">الكفيل الرقمي</h3>
+            <p className="text-sm text-muted-foreground">حالة طلبات الكفالة الخاصة بك</p>
+          </div>
+        </div>
+
+        {approved_guarantor_uid && (
+          <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg text-sm">
+            <span className="text-green-800 font-medium">لديك كفيل معتمد يدعم طلبك التمويلي</span>
+            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">معتمد</span>
+          </div>
+        )}
+
+        {outgoing_request && !approved_guarantor_uid && (
+          <div className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm">
+            <span>طلب الكفالة المُرسَل (بحد أقصى {outgoing_request.maxAmount.toLocaleString()} د.أ)</span>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusClass(outgoing_request.status)}`}>
+              {statusLabel(outgoing_request.status)}
+            </span>
+          </div>
+        )}
+
+        {incomingList.length > 0 && (
+          <div>
+            <p className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Users className="w-4 h-4" /> طلبات كفالة واردة إليك
+            </p>
+            <div className="space-y-2">
+              {incomingList.map(([requesterUid, request]) => (
+                <div key={requesterUid} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm">
+                  <span className="truncate dir-ltr text-xs text-muted-foreground">{requesterUid}</span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusClass(request.status)}`}>
+                    {statusLabel(request.status)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

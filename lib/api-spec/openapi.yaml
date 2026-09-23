@@ -16,6 +16,10 @@ tags:
     description: Public content
   - name: finance
     description: Financial analysis operations
+  - name: guarantor
+    description: Digital guarantor operations
+  - name: admin
+    description: Admin-only review operations
 paths:
   /healthz:
     get:
@@ -265,6 +269,109 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /guarantor/status:
+    get:
+      operationId: getGuarantorStatus
+      tags: [guarantor]
+      summary: Get the signed-in user's digital guarantor status
+      description: Returns any outgoing guarantor request, the approved guarantor (if any), and incoming requests naming this user as guarantor.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Guarantor status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorStatus"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      tags: [admin]
+      summary: List all users for the admin review dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All users with review/KYC/financial summary fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUsersResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/kyc-decision:
+    post:
+      operationId: submitKycDecision
+      tags: [admin]
+      summary: Manually approve or reject a user's KYC review
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycDecisionInput"
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycDecisionResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
           content:
             application/json:
               schema:
@@ -525,4 +632,137 @@ components:
           type: boolean
         currentDebtToIncomePercentage:
           type: number
+    GuarantorRequestStatus:
+      type: object
+      required:
+        - guarantorUid
+        - status
+        - maxAmount
+      properties:
+        guarantorUid:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, declined]
+        requestedAt:
+          type: ["string", "null"]
+          format: date-time
+        respondedAt:
+          type: ["string", "null"]
+          format: date-time
+        maxAmount:
+          type: number
+    IncomingGuarantorRequest:
+      type: object
+      required:
+        - status
+        - maxAmount
+      properties:
+        status:
+          type: string
+          enum: [pending, approved, declined]
+        requestedAt:
+          type: ["string", "null"]
+          format: date-time
+        maxAmount:
+          type: number
+    GuarantorStatus:
+      type: object
+      required:
+        - approved_guarantor_uid
+        - incoming_requests
+      properties:
+        outgoing_request:
+          anyOf:
+            - $ref: "#/components/schemas/GuarantorRequestStatus"
+            - type: "null"
+        approved_guarantor_uid:
+          type: ["string", "null"]
+        incoming_requests:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/IncomingGuarantorRequest"
+    AdminUser:
+      type: object
+      required:
+        - uid
+        - name
+        - review_status
+        - has_kyc_submission
+        - data_source
+        - stacking_flag
+        - statement_count
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        national_id:
+          type: ["string", "null"]
+        review_status:
+          type: string
+          enum: [pending, approved, rejected, no_submission]
+        review_reason:
+          type: ["string", "null"]
+        face_match:
+          type: ["boolean", "null"]
+        confidence:
+          type: ["number", "null"]
+        has_kyc_submission:
+          type: boolean
+        data_source:
+          type: string
+        debt_to_income_percentage:
+          type: ["number", "null"]
+        stacking_flag:
+          type: boolean
+        statement_count:
+          type: integer
+        guarantor_uid:
+          type: ["string", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+    AdminUsersResponse:
+      type: object
+      required:
+        - user_count
+        - pending_count
+        - users
+      properties:
+        user_count:
+          type: integer
+        pending_count:
+          type: integer
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUser"
+    KycDecisionInput:
+      type: object
+      required:
+        - uid
+        - decision
+      properties:
+        uid:
+          type: string
+        decision:
+          type: string
+          enum: [approved, rejected]
+        note:
+          type: ["string", "null"]
+    KycDecisionResult:
+      type: object
+      required:
+        - uid
+        - review_status
+        - reason
+      properties:
+        uid:
+          type: string
+        review_status:
+          type: string
+          enum: [approved, rejected]
+        reason:
+          type: string
 

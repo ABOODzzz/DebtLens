@@ -20,14 +20,18 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminUsersResponse,
   AdviceResult,
   AnalyzeInput,
   AnalyzeResult,
   ConsolidationRequestResult,
   ErrorResponse,
   FinancialSummary,
+  GuarantorStatus,
   Headline,
   HealthStatus,
+  KycDecisionInput,
+  KycDecisionResult,
   KycSubmitInput,
   KycSubmitResponse,
   LoanEligibilityResult,
@@ -764,5 +768,248 @@ export const useAssessLoanEligibility = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getAssessLoanEligibilityMutationOptions(options));
+    }
+
+export const getGetGuarantorStatusUrl = () => {
+
+
+
+
+  return `/api/guarantor/status`
+}
+
+/**
+ * Returns any outgoing guarantor request, the approved guarantor (if any), and incoming requests naming this user as guarantor.
+ * @summary Get the signed-in user's digital guarantor status
+ */
+export const getGuarantorStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<GuarantorStatus> => {
+
+  return customFetch<GuarantorStatus>(getGetGuarantorStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGuarantorStatusQueryKey = () => {
+    return [
+    `/api/guarantor/status`
+    ] as const;
+    }
+
+
+export const getGetGuarantorStatusQueryOptions = <TData = Awaited<ReturnType<typeof getGuarantorStatus>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGuarantorStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGuarantorStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGuarantorStatus>>> = ({ signal }) => getGuarantorStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGuarantorStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetGuarantorStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getGuarantorStatus>>>
+export type GetGuarantorStatusQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the signed-in user's digital guarantor status
+ */
+
+export function useGetGuarantorStatus<TData = Awaited<ReturnType<typeof getGuarantorStatus>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGuarantorStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetGuarantorStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminUsersUrl = () => {
+
+
+
+
+  return `/api/admin/users`
+}
+
+/**
+ * @summary List all users for the admin review dashboard
+ */
+export const listAdminUsers = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminUsersResponse> => {
+
+  return customFetch<AdminUsersResponse>(getListAdminUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminUsersQueryKey = () => {
+    return [
+    `/api/admin/users`
+    ] as const;
+    }
+
+
+export const getListAdminUsersQueryOptions = <TData = Awaited<ReturnType<typeof listAdminUsers>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminUsersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminUsers>>> = ({ signal }) => listAdminUsers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminUsers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminUsers>>>
+export type ListAdminUsersQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List all users for the admin review dashboard
+ */
+
+export function useListAdminUsers<TData = Awaited<ReturnType<typeof listAdminUsers>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminUsersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubmitKycDecisionUrl = () => {
+
+
+
+
+  return `/api/admin/kyc-decision`
+}
+
+/**
+ * @summary Manually approve or reject a user's KYC review
+ */
+export const submitKycDecision = async (kycDecisionInput: KycDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<KycDecisionResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<KycDecisionResult>(getSubmitKycDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(kycDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitKycDecisionMutationKey = () => ['submitKycDecision'] as const;
+
+export const getSubmitKycDecisionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitKycDecision>>, TError,SubmitKycDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitKycDecision>>, TError,SubmitKycDecisionMutationVariables, TContext> => {
+
+const mutationKey = getSubmitKycDecisionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitKycDecision>>, SubmitKycDecisionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  submitKycDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitKycDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof submitKycDecision>>>
+    export type SubmitKycDecisionMutationBody = BodyType<KycDecisionInput>
+    export type SubmitKycDecisionMutationError = ErrorType<ErrorResponse>
+    export type SubmitKycDecisionMutationVariables = {data: BodyType<KycDecisionInput>}
+
+    /**
+ * @summary Manually approve or reject a user's KYC review
+ */
+export const useSubmitKycDecision = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitKycDecision>>, TError,SubmitKycDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitKycDecision>>,
+        TError,
+        SubmitKycDecisionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitKycDecisionMutationOptions(options));
     }
 
