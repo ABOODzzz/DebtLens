@@ -11,4 +11,10 @@ The `loan_applications` Postgres table (lib/db/src/schema/loanApplications.ts, s
 
 A terminal decision (`approved`/`admin_rejected`) can be walked back via a separate revise endpoint/store function (distinct from the original decision one) that only accepts rows already in a terminal state, requires a reason, and enforces a time window from `updated_at` so it can't relitigate old settled cases; the revise notification must reach the customer and, if a guarantor relationship is attached, the guarantor too.
 
+Guarantor-driven application changes must use compare-and-set transitions between `awaiting_guarantor` and `submitted`; a finalized application must win over a correction rather than being downgraded.
+
+**Why:** a guarantor correction and the final disbursement decision can race, and the final decision is authoritative once recorded.
+
+**How to apply:** keep the expected current status in the same SQL `UPDATE` predicate and surface whether the transition happened or was intentionally skipped.
+
 Test-mocking pitfall: `admin_routes.py` does `import loan_application_store` (and `from notifications import notify`) *inside* each route function body, not at module top level. `monkeypatch.setattr(admin_routes, "loan_application_store", fake)` therefore has no effect — the function's inline import always resolves to the real module via `sys.modules`. Tests must instead monkeypatch attributes on the actual `loan_application_store`/`notifications` module objects (e.g. `monkeypatch.setattr(loan_application_store, "get_loan_application", fake_fn)`).

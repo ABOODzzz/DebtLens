@@ -179,21 +179,33 @@ def attach_guarantor_relationship(application_id: int, relationship_id: str) -> 
 
 def update_status_by_relationship(relationship_id: str, status: str) -> dict | None:
     """
-    Called from the admin guarantor decision (admin_routes.py) to move any
-    application linked to this relationship forward: `submitted` once the
-    guarantor is admin-approved, or back to `awaiting_guarantor` if rejected
-    so the applicant can line up a different guarantor.
+    Called from the admin guarantor decision (admin_routes.py) to move a
+    linked application between its two in-flight guarantor states:
+    `awaiting_guarantor` -> `submitted` when the guarantor is approved, or
+    `submitted` -> `awaiting_guarantor` when an approval is reversed.
+
+    The current status is part of the atomic update predicate. This prevents
+    a guarantor correction from downgrading an application that was finalized
+    by an admin, and also makes a concurrent final application decision win
+    over the correction.
     """
+    expected_current_status = {
+        "submitted": "awaiting_guarantor",
+        "awaiting_guarantor": "submitted",
+    }.get(status)
+    if expected_current_status is None:
+        raise ValueError(f"Unsupported guarantor application transition: {status}")
+
     with psycopg2.connect(_database_url()) as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
                 UPDATE loan_applications
                 SET status = %s, updated_at = now()
-                WHERE guarantor_relationship_id = %s
+                WHERE guarantor_relationship_id = %s AND status = %s
                 RETURNING *
                 """,
-                (status, relationship_id),
+                (status, relationship_id, expected_current_status),
             )
             row = cur.fetchone()
         conn.commit()

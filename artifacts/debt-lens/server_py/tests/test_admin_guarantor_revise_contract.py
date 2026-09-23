@@ -102,6 +102,8 @@ class TestAdminGuarantorRevise:
         self.relationship = _relationship("approved")
         self.notified: list[dict] = []
         self.application_updates: list[tuple[str, str]] = []
+        self.application_status = "submitted"
+        self.application_update_winner: str | None = None
 
     def teardown_method(self):
         app.dependency_overrides.pop(get_current_user, None)
@@ -111,7 +113,7 @@ class TestAdminGuarantorRevise:
         monkeypatch.setattr(
             loan_application_store,
             "update_status_by_relationship",
-            lambda relationship_id, new_status: self.application_updates.append((relationship_id, new_status)),
+            self._update_application_status,
         )
         monkeypatch.setattr(
             notifications,
@@ -122,6 +124,20 @@ class TestAdminGuarantorRevise:
         )
         app.dependency_overrides[get_current_user] = lambda: {"uid": ADMIN_UID}
         return TestClient(app)
+
+    def _update_application_status(self, relationship_id: str, new_status: str):
+        if self.application_update_winner is not None:
+            self.application_status = self.application_update_winner
+            return None
+        expected_current_status = {
+            "submitted": "awaiting_guarantor",
+            "awaiting_guarantor": "submitted",
+        }[new_status]
+        if self.application_status != expected_current_status:
+            return None
+        self.application_updates.append((relationship_id, new_status))
+        self.application_status = new_status
+        return {"status": new_status}
 
     def test_reversing_approval_rejects_and_returns_linked_application_to_guarantor_step(
         self, monkeypatch, openapi_spec
@@ -146,9 +162,11 @@ class TestAdminGuarantorRevise:
         assert self.application_updates == [(RELATIONSHIP_ID, "awaiting_guarantor")]
         assert {call["uid"] for call in self.notified} == {REQUESTER_UID, GUARANTOR_UID}
         assert all(call["notif_type"] == "guarantor_admin_revised" for call in self.notified)
+        assert all("أُعيد طلب التمويل المرتبط" in call["message"] for call in self.notified)
 
     def test_reversing_rejection_approves_and_moves_linked_application_to_review(self, monkeypatch):
         self.relationship = _relationship("rejected")
+        self.application_status = "awaiting_guarantor"
         client = self._client(monkeypatch)
 
         response = client.post(
@@ -164,6 +182,43 @@ class TestAdminGuarantorRevise:
         assert response.json()["status"] == "approved"
         assert self.application_updates == [(RELATIONSHIP_ID, "submitted")]
         assert {call["uid"] for call in self.notified} == {REQUESTER_UID, GUARANTOR_UID}
+        assert all("تحديث حالة طلب التمويل المرتبط" in call["message"] for call in self.notified)
+
+    def test_revising_guarantor_cannot_downgrade_finalized_application(self, monkeypatch):
+        self.application_status = "approved"
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/guarantor-revise",
+            json={
+                "relationship_id": RELATIONSHIP_ID,
+                "new_status": "rejected",
+                "reason": "تم اكتشاف معلومات مالية غير محدّثة",
+            },
+        )
+
+        assert response.status_code == 200
+        assert self.application_updates == []
+        assert self.application_status == "approved"
+        assert all("حُميت النتيجة النهائية" in call["message"] for call in self.notified)
+
+    def test_concurrent_application_decision_wins_over_guarantor_revision(self, monkeypatch):
+        self.application_update_winner = "admin_rejected"
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/guarantor-revise",
+            json={
+                "relationship_id": RELATIONSHIP_ID,
+                "new_status": "rejected",
+                "reason": "تم اكتشاف معلومات مالية غير محدّثة",
+            },
+        )
+
+        assert response.status_code == 200
+        assert self.application_updates == []
+        assert self.application_status == "admin_rejected"
+        assert all("سبقت عملية أخرى هذا التعديل" in call["message"] for call in self.notified)
 
     @pytest.mark.parametrize(
         ("status_value", "payload", "expected_detail"),

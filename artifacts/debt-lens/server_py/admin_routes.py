@@ -1450,6 +1450,43 @@ def guarantor_revise(body: GuarantorReviseBody, admin: dict = Depends(get_curren
         f"راجعت الإدارة قرارها السابق بشأن الكفالة الرقمية، وأصبح القرار الآن {new_status_label}. "
         f"السبب: {body.reason.strip()}"
     )
+
+    # The original approval advances a linked application to `submitted`, while
+    # rejection sends it back to `awaiting_guarantor`. Keep that application
+    # state in sync when an admin reverses the guarantor decision. The store
+    # performs this as a compare-and-set transition, so a final application
+    # decision or another concurrent update cannot be silently downgraded.
+    if previous_status != body.new_status and rel.get("applicationId") is not None:
+        import loan_application_store
+
+        application_update = None
+        application_sync_failed = False
+        try:
+            application_status = "submitted" if body.new_status == "approved" else "awaiting_guarantor"
+            application_update = loan_application_store.update_status_by_relationship(
+                body.relationship_id, application_status
+            )
+        except Exception:  # noqa: BLE001
+            application_sync_failed = True
+            logger.exception("Failed to update loan application linked to revised relationship %s", body.relationship_id)
+
+        if application_sync_failed:
+            application_state_message = (
+                " تعذر تحديث حالة طلب التمويل المرتبط تلقائياً؛ يرجى مراجعته قبل متابعة الطلب."
+            )
+        elif application_update:
+            application_state_message = (
+                " كما تم تحديث حالة طلب التمويل المرتبط إلى قيد المراجعة النهائية."
+                if application_update["status"] == "submitted"
+                else " كما أُعيد طلب التمويل المرتبط إلى مرحلة البحث عن كفيل جديد."
+            )
+        else:
+            application_state_message = (
+                " لم تتغير حالة طلب التمويل المرتبط؛ حُميت النتيجة النهائية "
+                "أو سبقت عملية أخرى هذا التعديل."
+            )
+        message += application_state_message
+
     for uid in (requester_uid, guarantor_uid):
         notify(
             db,
@@ -1459,18 +1496,6 @@ def guarantor_revise(body: GuarantorReviseBody, admin: dict = Depends(get_curren
             message=message,
             related_id=body.relationship_id,
         )
-
-    # The original approval advances a linked application to `submitted`, while
-    # rejection sends it back to `awaiting_guarantor`. Keep that application
-    # state in sync when an admin reverses the guarantor decision.
-    if previous_status != body.new_status and rel.get("applicationId") is not None:
-        import loan_application_store
-
-        try:
-            application_status = "submitted" if body.new_status == "approved" else "awaiting_guarantor"
-            loan_application_store.update_status_by_relationship(body.relationship_id, application_status)
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to update loan application linked to revised relationship %s", body.relationship_id)
 
     return {
         "relationship_id": body.relationship_id,
