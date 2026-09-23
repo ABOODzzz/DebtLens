@@ -34,7 +34,7 @@ _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15 MB, generous for a phone photo
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 # This is a face-comparison + document-reading vision task, so it gets a
 # larger token budget than the plain-text endpoints.
-_KYC_MAX_TOKENS = 2048
+_KYC_MAX_TOKENS = 16000
 
 
 class KycSubmitRequest(BaseModel):
