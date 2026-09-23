@@ -503,17 +503,22 @@ def advice(user: dict = Depends(get_current_user)):
         if restructuring_plan
         else "لا توجد ديون نشطة تحتاج إعادة هيكلة حاليًا."
     )
+    statement_metrics = (
+        f"- إجمالي الدخل في الحركات: {risk_metrics['total_income']} دينار\n"
+        f"- القروض الجديدة في الحركات: {risk_metrics['total_new_loans']} دينار\n"
+        f"- الأقساط في الحركات: {risk_metrics['total_repayments']} دينار\n"
+        f"- علامة تكديس القروض: {'نعم' if risk_metrics['stacking_flag'] else 'لا'}"
+        if profile["data_source"] == "verified"
+        else "لا توجد كشوفات محللة بعد؛ الأرقام التالية مُصرّح بها من العميل ولا تمثل بيانات بنكية موثقة."
+    )
 
     prompt = f"""أنت مستشار مالي أردني تتحدث باللهجة الأردنية العامية بأسلوب ودي وبسيط.
 
 بيانات المستخدم المالية الحقيقية:
-- إجمالي الدخل: {risk_metrics['total_income']} دينار
-- إجمالي القروض الجديدة: {risk_metrics['total_new_loans']} دينار
-- إجمالي الأقساط الشهرية: {risk_metrics['total_repayments']} دينار
-- نسبة الدين إلى الدخل: {risk_metrics['debt_to_income_percentage']}%
-- علامة تكديس القروض (أخذ قروض من عدة جهات): {"نعم" if risk_metrics['stacking_flag'] else "لا"}
+{statement_metrics}
 - الدخل الشهري المعتمد: {income} دينار
 - الالتزامات الشهرية الكاملة (قروض، إيجار، فواتير وغيرها): {monthly_obligations} دينار
+- نسبة الالتزامات إلى الدخل: {round(monthly_obligations / income * 100, 2) if income > 0 else 0}%
 - المتاح بعد خصم جميع الالتزامات: {disposable_income} دينار
 - الحالة الوظيفية: {profile['profile']['employment_status']}
 - الالتزامات التي أدخلها المستخدم: {_manual_obligations(profile)}

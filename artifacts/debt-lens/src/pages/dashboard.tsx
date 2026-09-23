@@ -1,4 +1,4 @@
-import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorNetwork, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorNetworkQueryKey, GuarantorNetwork, GuarantorRelationshipSummary, useSubmitLoanApplication, useGetCurrentLoanApplication, getGetCurrentLoanApplicationQueryKey, LoanApplication } from "@workspace/api-client-react";
+import { useGetFinancialSummary, getGetFinancialSummaryQueryKey, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorNetwork, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorNetworkQueryKey, GuarantorNetwork, GuarantorRelationshipSummary, useSubmitLoanApplication, useGetCurrentLoanApplication, getGetCurrentLoanApplicationQueryKey, LoanApplication } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/lib/i18n/context";
 import { auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { doc, updateDoc } from "firebase/firestore";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart as RechartsPieChart, Pie, Cell, Legend } from "recharts";
 
 const CHART_COLORS = ["#17365D", "#EAB308", "#0F766E", "#DC2626", "#7C3AED", "#0284C7"];
@@ -108,6 +110,14 @@ function DashboardContent() {
             <p className="text-muted-foreground">
               {t("dashboard.welcome.unverified")}
             </p>
+          </div>
+        )}
+        {!isVerified && summary.totalMonthlyIncome <= 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-primary">
+            <span>{t("dashboard.obligations.missingIncome")}</span>
+            <Button size="sm" onClick={() => setActiveDialog("full-analysis")}>
+              {t("dashboard.obligations.completeDetails")}
+            </Button>
           </div>
         )}
 
@@ -740,13 +750,17 @@ const DialogWrapper = ({ title, isOpen, onClose, children }: { title: string, is
   );
 };
 
-function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
+function FinancialDetailsForm({ needIncome, needObligations, onSaved }: {
+  needIncome: boolean;
+  needObligations: boolean;
+  onSaved: () => void;
+}) {
   const { profile } = useAuth();
-  const { t, language } = useLanguage();
-  const analysis = useAnalyzeFinances();
-  const needsManualObligations = profile?.hasBankAccount === false && !profile.manualObligationsDeclared;
-  const [collectingObligations, setCollectingObligations] = useState(needsManualObligations);
+  const { t } = useLanguage();
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [income, setIncome] = useState(String(profile?.monthlyIncome || ""));
   const [obligations, setObligations] = useState([
     { category: "rent", label: t("dashboard.obligations.rent"), amount: "" },
     { category: "utilities", label: t("dashboard.obligations.utilities"), amount: "" },
@@ -756,17 +770,30 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
     { category: "other", label: t("dashboard.obligations.other"), amount: "" },
   ]);
 
-  useEffect(() => {
-    if (!needsManualObligations) analysis.mutate({ data: { type: "full" } });
-  }, []);
-
-  const saveObligations = async () => {
+  const saveDetails = async () => {
+    const parsedIncome = Number(income);
+    if (needIncome && (!Number.isFinite(parsedIncome) || parsedIncome <= 0)) {
+      setError(t("dashboard.obligations.invalidIncome"));
+      return;
+    }
     const clean = obligations
       .map((item) => ({ ...item, amount: Number(item.amount || 0) }))
       .filter((item) => item.amount > 0);
-    if (!clean.length) return;
+    if (needObligations && obligations.some((item) => item.amount !== "" && (!Number.isFinite(Number(item.amount)) || Number(item.amount) < 0))) {
+      setError(t("dashboard.obligations.invalidAmount"));
+      return;
+    }
+    setError("");
     setSaving(true);
     try {
+      if (needIncome) {
+        if (!auth.currentUser) throw new Error("Not signed in");
+        await updateDoc(doc(db, "users", auth.currentUser.uid), {
+          monthlyIncome: parsedIncome,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (needObligations) {
       const token = await auth.currentUser?.getIdToken();
       const response = await fetch("/api/manual-obligations", {
         method: "POST",
@@ -777,45 +804,71 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ obligations: clean }),
       });
       if (!response.ok) throw new Error("Unable to save obligations");
-      setCollectingObligations(false);
-      analysis.mutate({ data: { type: "full" } });
+      }
+      await queryClient.invalidateQueries({ queryKey: getGetFinancialSummaryQueryKey() });
+      onSaved();
+    } catch {
+      setError(t("dashboard.obligations.saveError"));
     } finally {
       setSaving(false);
     }
   };
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-secondary/30 bg-secondary/5 p-4">
+        <h3 className="font-bold text-primary">{t("dashboard.obligations.title")}</h3>
+        <p className="text-sm text-muted-foreground mt-1">{t("dashboard.obligations.description")}</p>
+      </div>
+      {needIncome && (
+        <div>
+          <Label htmlFor="financial-income">{t("dashboard.obligations.income")}</Label>
+          <Input id="financial-income" type="number" min="0" step="0.01" value={income}
+            onChange={(event) => setIncome(event.target.value)} className="mt-1" />
+        </div>
+      )}
+      {needObligations && (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {obligations.map((item, index) => (
+            <div key={item.category}>
+              <Label htmlFor={`obligation-${item.category}`}>{item.label}</Label>
+              <Input id={`obligation-${item.category}`} type="number" min="0" step="0.01"
+                value={item.amount}
+                onChange={(event) => setObligations((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, amount: event.target.value } : row))}
+                placeholder="0" className="mt-1" />
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      <Button className="w-full" disabled={saving} onClick={saveDetails}>
+        {saving ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : <Sparkles className="w-4 h-4 me-2" />}
+        {t("dashboard.obligations.analyze")}
+      </Button>
+    </div>
+  );
+}
+
+function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
+  const { profile } = useAuth();
+  const { t, language } = useLanguage();
+  const summaryQuery = useGetFinancialSummary();
+  const analysis = useAnalyzeFinances();
+  const needIncome = (summaryQuery.data?.totalMonthlyIncome ?? 0) <= 0;
+  const needObligations = summaryQuery.data?.dataSource !== "verified" && !profile?.manualObligationsDeclared;
+  const [collectingObligations, setCollectingObligations] = useState(needIncome || needObligations);
+
+  useEffect(() => {
+    if (!collectingObligations) analysis.mutate({ data: { type: "full" } });
+  }, []);
 
   const data = analysis.data as any;
 
   return (
     <DialogWrapper title={t("dashboard.dialogs.analysis")} isOpen={true} onClose={onClose}>
       {collectingObligations ? (
-        <div className="space-y-5">
-          <div className="rounded-xl border border-secondary/30 bg-secondary/5 p-4">
-            <h3 className="font-bold text-primary">{t("dashboard.obligations.title")}</h3>
-            <p className="text-sm text-muted-foreground mt-1">{t("dashboard.obligations.description")}</p>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {obligations.map((item, index) => (
-              <div key={item.category}>
-                <Label htmlFor={`obligation-${item.category}`}>{item.label}</Label>
-                <Input
-                  id={`obligation-${item.category}`}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={item.amount}
-                  onChange={(event) => setObligations((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, amount: event.target.value } : row))}
-                  placeholder="0"
-                  className="mt-1"
-                />
-              </div>
-            ))}
-          </div>
-          <Button className="w-full" disabled={saving} onClick={saveObligations}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : <Sparkles className="w-4 h-4 me-2" />}
-            {t("dashboard.obligations.analyze")}
-          </Button>
-        </div>
+        <FinancialDetailsForm needIncome={needIncome} needObligations={needObligations}
+          onSaved={() => { setCollectingObligations(false); analysis.mutate({ data: { type: "full" } }); }} />
       ) : analysis.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
        analysis.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        data?.awaitingVerification ? <AwaitingVerificationNotice message={data.message} /> :
@@ -898,16 +951,24 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
 }
 
 function AiAdviceDialog({ onClose }: { onClose: () => void }) {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
+  const { profile } = useAuth();
+  const summaryQuery = useGetFinancialSummary();
+  const needIncome = (summaryQuery.data?.totalMonthlyIncome ?? 0) <= 0;
+  const needObligations = summaryQuery.data?.dataSource !== "verified" && !profile?.manualObligationsDeclared;
+  const [collectingObligations, setCollectingObligations] = useState(needIncome || needObligations);
   const advice = useGetAdvice();
   
-  useState(() => {
-    advice.mutate();
-  });
+  useEffect(() => {
+    if (!collectingObligations) advice.mutate();
+  }, []);
 
   return (
     <DialogWrapper title={t("dashboard.dialogs.advice")} isOpen={true} onClose={onClose}>
-      {advice.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
+      {collectingObligations ? (
+        <FinancialDetailsForm needIncome={needIncome} needObligations={needObligations}
+          onSaved={() => { setCollectingObligations(false); advice.mutate(); }} />
+      ) : advice.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> :
        advice.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        advice.data?.awaitingVerification ? <AwaitingVerificationNotice message={advice.data.message} /> :
        advice.data && (

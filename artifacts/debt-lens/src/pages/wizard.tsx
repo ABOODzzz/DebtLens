@@ -80,7 +80,8 @@ export default function WizardPage() {
       return (
         bankAccounts.length > 0 &&
         bankAccounts.every((acc) => acc.bankName && acc.accountNumber) &&
-        isRegisteredGuarantor !== null
+        isRegisteredGuarantor !== null &&
+        Number(monthlyIncome) > 0
       );
     } else {
       return monthlyIncome !== "" && Number(monthlyIncome) > 0;
@@ -150,6 +151,7 @@ export default function WizardPage() {
     try {
       const fullProfile = {
         hasBankAccount: hasBankAccount!,
+        monthlyIncome: Number(monthlyIncome),
         ...(hasBankAccount
           ? {
               bankAccounts,
@@ -158,7 +160,6 @@ export default function WizardPage() {
               isRegisteredGuarantor: isRegisteredGuarantor!,
             }
           : {
-              monthlyIncome: Number(monthlyIncome),
               employerName,
               employmentType,
               hasOwnBusiness,
@@ -406,6 +407,12 @@ export default function WizardPage() {
                     <div className="pt-2 border-t space-y-4">
                        <h4 className="font-semibold border-b pb-2">{t("wizard.financial.employer")}</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>{t("wizard.financial.monthlyIncome")}</Label>
+                          <Input type="number" min="0" step="0.01" value={monthlyIncome}
+                            onChange={(e) => setMonthlyIncome(e.target.value)}
+                            placeholder={t("wizard.financial.incomePlaceholder")} />
+                        </div>
                         <div className="space-y-2">
                            <Label>{t("wizard.financial.employerQuestion")}</Label>
                           <Input
