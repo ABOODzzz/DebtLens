@@ -247,6 +247,27 @@ def _decide_review(typed_full_name: str, verdict: dict) -> tuple[str, str]:
     return "pending", note
 
 
+@router.get("/status")
+def kyc_status(user: dict = Depends(get_current_user)):
+    """Current user's own identity review status, for their dashboard."""
+    try:
+        db = get_firestore_client()
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach the database right now. Please try again shortly.",
+        ) from exc
+
+    snapshot = db.collection("users").document(user["uid"]).get()
+    user_doc = snapshot.to_dict() if snapshot.exists else {}
+    user_doc = user_doc or {}
+
+    return {
+        "review_status": user_doc.get("reviewStatus") or "no_submission",
+        "review_reason": user_doc.get("reviewReason"),
+    }
+
+
 @router.post("/submit")
 def submit_kyc(body: KycSubmitRequest, user: dict = Depends(get_current_user)):
     uid = user["uid"]

@@ -1,5 +1,22 @@
 {% extends "base.html" %}
 {% block title %}لوحة التحكم - DebtLens{% endblock %}
+{% block head %}
+<style>
+  .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; }
+  .score-ring {
+    width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; margin: 0 auto 0.75rem; border: 8px solid #eef1f4; position: relative;
+  }
+  .score-ring .score-value { font-size: 1.6rem; font-weight: 900; }
+  .score-ring .score-max { font-size: 0.7rem; color: #9aa7b4; }
+  .kv-row { display: flex; justify-content: space-between; padding: 0.45rem 0; border-bottom: 1px solid #f1f3f5; font-size: 0.9rem; }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-row .kv-label { color: #5a6b7f; }
+  .kv-row .kv-value { font-weight: 700; }
+  .skeleton { background: linear-gradient(90deg, #eef1f4 25%, #f7f9fa 50%, #eef1f4 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; height: 1rem; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+</style>
+{% endblock %}
 {% block header_extra %}
 <span id="user-bar" style="display:none; display:flex; align-items:center; gap:0.75rem;">
   <span id="user-email" class="muted" style="color:#f3d98b;"></span>
@@ -10,10 +27,35 @@
 {% block content %}
 <div class="card">
   <h1 id="dashboard-greeting" style="margin-top:0;">أهلًا بك في DebtLens</h1>
-  <p class="muted">
-    هذه لوحتك المالية الشخصية: ملخص دخلك، ديونك، وحالة مراجعة هويتك ستظهر هنا بمجرد
-    ربط بياناتك الفعلية عبر واجهة FastAPI في الخطوات التالية.
-  </p>
+  <p class="muted">هذه لوحتك المالية الشخصية: سكورك الائتماني، حالة مراجعة هويتك، وضعك الائتماني، وحالة الكفيل الرقمي إن وُجد.</p>
+</div>
+
+<div class="dash-grid">
+  <div class="card" id="score-card">
+    <h2 style="margin-top:0; font-size:1.05rem;">السكور الائتماني</h2>
+    <div class="skeleton" style="height:120px;border-radius:50%;width:120px;margin:0 auto;"></div>
+  </div>
+
+  <div class="card" id="kyc-card">
+    <h2 style="margin-top:0; font-size:1.05rem;">حالة مراجعة الهوية</h2>
+    <div class="skeleton" style="height:1.5rem;width:60%;"></div>
+  </div>
+
+  <div class="card" id="summary-card">
+    <h2 style="margin-top:0; font-size:1.05rem;">وضعك المالي</h2>
+    <div class="skeleton" style="height:1rem;margin-bottom:0.5rem;"></div>
+    <div class="skeleton" style="height:1rem;width:70%;"></div>
+  </div>
+
+  <div class="card" id="guarantor-card">
+    <h2 style="margin-top:0; font-size:1.05rem;">الكفيل الرقمي</h2>
+    <div class="skeleton" style="height:1rem;width:80%;"></div>
+  </div>
+</div>
+
+<div class="card" id="loan-card" style="display:none;">
+  <h2 style="margin-top:0; font-size:1.05rem;">توصية القرض</h2>
+  <div id="loan-content"></div>
 </div>
 
 {% if firebase_enabled and firebase_web_configured %}
@@ -26,6 +68,119 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+
+  let idToken = null;
+
+  async function authedGet(path) {
+    const res = await fetch(path, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `طلب فشل بالحالة ${res.status}`);
+    }
+    return res.json();
+  }
+
+  function errorHtml(message) {
+    return `<p class="badge badge-warn">${message}</p>`;
+  }
+
+  const KYC_LABELS = {
+    approved: ["موافَق عليه", "#e4f4e7", "#1c7a37"],
+    rejected: ["مرفوض", "#fbe4e4", "#b3261e"],
+    pending: ["بانتظار المراجعة", "#fdf1d6", "#9a6b06"],
+    no_submission: ["لم تُقدّم بياناتك بعد", "#eef1f4", "#5a6b7f"],
+  };
+
+  async function loadKyc() {
+    const card = document.getElementById("kyc-card");
+    try {
+      const data = await authedGet("/api/kyc/status");
+      const [label, bg, color] = KYC_LABELS[data.review_status] || KYC_LABELS.no_submission;
+      card.innerHTML = `
+        <h2 style="margin-top:0; font-size:1.05rem;">حالة مراجعة الهوية</h2>
+        <span class="badge" style="background:${bg};color:${color};">${label}</span>
+        ${data.review_reason ? `<p class="muted" style="margin-top:0.75rem;">${data.review_reason}</p>` : ""}
+        ${data.review_status === "no_submission" ? '<p class="muted" style="margin-top:0.75rem;">لم تُكمل بعد خطوة التحقق من الهوية.</p>' : ""}
+      `;
+    } catch (error) {
+      card.innerHTML = `<h2 style="margin-top:0; font-size:1.05rem;">حالة مراجعة الهوية</h2>${errorHtml(error.message)}`;
+    }
+  }
+
+  async function loadSummary() {
+    const card = document.getElementById("summary-card");
+    try {
+      const data = await authedGet("/api/financial-summary");
+      if (data.awaiting_verification) {
+        card.innerHTML = `<h2 style="margin-top:0; font-size:1.05rem;">وضعك المالي</h2><p class="muted">${data.message}</p>`;
+        return;
+      }
+      card.innerHTML = `
+        <h2 style="margin-top:0; font-size:1.05rem;">وضعك المالي</h2>
+        <div class="kv-row"><span class="kv-label">جهات تمويل نشطة</span><span class="kv-value">${data.financing_institutions_count}</span></div>
+        <div class="kv-row"><span class="kv-label">لديك قروض قائمة</span><span class="kv-value">${data.has_active_loans ? "نعم" : "لا"}</span></div>
+      `;
+    } catch (error) {
+      card.innerHTML = `<h2 style="margin-top:0; font-size:1.05rem;">وضعك المالي</h2>${errorHtml(error.message)}`;
+    }
+  }
+
+  async function loadGuarantor() {
+    const card = document.getElementById("guarantor-card");
+    try {
+      const data = await authedGet("/api/guarantor/status");
+      const incomingCount = Object.keys(data.incoming_requests || {}).length;
+      let html = `<h2 style="margin-top:0; font-size:1.05rem;">الكفيل الرقمي</h2>`;
+      if (data.approved_guarantor_uid) {
+        html += `<span class="badge" style="background:#e4f4e7;color:#1c7a37;">لديك كفيل معتمد</span>`;
+      } else if (data.outgoing_request) {
+        const s = data.outgoing_request.status;
+        const label = s === "pending" ? "بانتظار رد الكفيل" : s === "declined" ? "تم الرفض" : s;
+        html += `<span class="badge badge-warn">${label}</span>`;
+      } else {
+        html += `<p class="muted">لا يوجد طلب كفالة حاليًا.</p>`;
+      }
+      if (incomingCount > 0) {
+        html += `<p class="muted" style="margin-top:0.75rem;">لديك ${incomingCount} طلب/طلبات كفالة واردة بانتظار ردك.</p>`;
+      }
+      card.innerHTML = html;
+    } catch (error) {
+      card.innerHTML = `<h2 style="margin-top:0; font-size:1.05rem;">الكفيل الرقمي</h2>${errorHtml(error.message)}`;
+    }
+  }
+
+  async function loadScoreAndLoan() {
+    const scoreCard = document.getElementById("score-card");
+    const loanCard = document.getElementById("loan-card");
+    const loanContent = document.getElementById("loan-content");
+    try {
+      const data = await authedGet("/api/ai-loan-assessment");
+      scoreCard.innerHTML = `
+        <h2 style="margin-top:0; font-size:1.05rem;">السكور الائتماني</h2>
+        <div class="score-ring" style="border-color:${data.credit_score_color || "#e0b02e"};">
+          <span class="score-value">${data.credit_score ?? "—"}</span>
+          <span class="score-max">من 850</span>
+        </div>
+        <p style="text-align:center; font-weight:700; color:${data.credit_score_color || "#0f1f33"};">${data.credit_score_label || ""}</p>
+        ${data.guarantor_backed ? '<p class="muted" style="text-align:center;">مدعوم بكفيل رقمي</p>' : ""}
+      `;
+
+      loanCard.style.display = "block";
+      if (data.eligible) {
+        loanContent.innerHTML = `
+          <div class="kv-row"><span class="kv-label">المبلغ المقترح</span><span class="kv-value">${data.recommended_amount} د.أ</span></div>
+          <div class="kv-row"><span class="kv-label">الفائدة السنوية</span><span class="kv-value">${data.interest_rate}%</span></div>
+          <div class="kv-row"><span class="kv-label">مدة السداد</span><span class="kv-value">${data.term_months} شهرًا</span></div>
+          <div class="kv-row"><span class="kv-label">القسط الشهري</span><span class="kv-value">${data.monthly_installment} د.أ</span></div>
+          <p class="muted" style="margin-top:0.75rem;">${data.recommendation}</p>
+        `;
+      } else {
+        loanContent.innerHTML = `<p class="muted">${data.recommendation}</p>`;
+      }
+    } catch (error) {
+      scoreCard.innerHTML = `<h2 style="margin-top:0; font-size:1.05rem;">السكور الائتماني</h2>${errorHtml(error.message)}`;
+    }
+  }
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
@@ -40,7 +195,8 @@
       return;
     }
 
-    localStorage.setItem("debtlens_id_token", await user.getIdToken());
+    idToken = await user.getIdToken();
+    localStorage.setItem("debtlens_id_token", idToken);
     localStorage.setItem("debtlens_uid", user.uid);
 
     document.getElementById("login-link").style.display = "none";
@@ -48,6 +204,11 @@
     bar.style.display = "flex";
     document.getElementById("user-email").textContent = user.email || user.uid;
     document.getElementById("dashboard-greeting").textContent = `أهلًا بك، ${user.email || "بك"}`;
+
+    loadKyc();
+    loadSummary();
+    loadGuarantor();
+    loadScoreAndLoan();
   });
 
   document.getElementById("logout-btn").addEventListener("click", async () => {
