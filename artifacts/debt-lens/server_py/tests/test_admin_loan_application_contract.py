@@ -187,9 +187,9 @@ class FakeTransactionalDecisionDatabase:
     test.
     """
 
-    def __init__(self, application: dict):
+    def __init__(self, application: dict, history: list[dict] | None = None):
         self.applications = {application["id"]: application}
-        self.history: list[dict] = []
+        self.history: list[dict] = deepcopy(history or [])
         self.fail_history_insert = False
         self.commit_count = 0
         self.rollback_count = 0
@@ -515,6 +515,35 @@ class TestLoanApplicationDecisionStore:
         assert database.applications[1]["status"] == initial_status
         assert database.applications[1]["admin_decision_reason"] is None
         assert database.history == []
+        assert database.commit_count == 0
+        assert database.rollback_count == 1
+
+    def test_failed_revision_preserves_prior_decision_and_history(self, monkeypatch):
+        application = _database_application_row("approved")
+        application["admin_decision_reason"] = "initial approval"
+        original_history = [
+            {
+                "id": 1,
+                "application_id": 1,
+                "decision": "approved",
+                "reason": "initial approval",
+                "admin_uid": "admin-uid-initial",
+                "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            }
+        ]
+        database = FakeTransactionalDecisionDatabase(application, original_history)
+        database.fail_history_insert = True
+        self._patch_database(monkeypatch, database)
+
+        with pytest.raises(RuntimeError, match="simulated decision history insert failure"):
+            loan_application_store.revise_admin_decision(
+                1, "admin_rejected", "corrected decision", "admin-uid-revision"
+            )
+
+        assert database.applications[1]["status"] == "approved"
+        assert database.applications[1]["admin_decision_reason"] == "initial approval"
+        assert database.history == original_history
+        assert [entry["id"] for entry in database.history] == [1]
         assert database.commit_count == 0
         assert database.rollback_count == 1
 
