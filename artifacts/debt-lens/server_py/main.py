@@ -46,13 +46,34 @@ app.include_router(kyc_router)
 app.include_router(admin_router)
 app.include_router(guarantor_router)
 
+# ---------------------------------------------------------------------------
+# Firebase Web (client-side) config -- these are public app identifiers, not
+# secrets in the security sense (Firebase's own docs say so explicitly), but
+# they're stored as Replit secrets here because they came in with a VITE_
+# prefix. Safe to embed in server-rendered HTML for the client SDK to use.
+# ---------------------------------------------------------------------------
+FIREBASE_WEB_CONFIG = {
+    "apiKey": os.environ.get("VITE_FIREBASE_API_KEY", ""),
+    "authDomain": os.environ.get("VITE_FIREBASE_AUTH_DOMAIN", ""),
+    "projectId": os.environ.get("VITE_FIREBASE_PROJECT_ID", ""),
+    "storageBucket": os.environ.get("VITE_FIREBASE_STORAGE_BUCKET", ""),
+    "messagingSenderId": os.environ.get("VITE_FIREBASE_MESSAGING_SENDER_ID", ""),
+    "appId": os.environ.get("VITE_FIREBASE_APP_ID", ""),
+}
+FIREBASE_WEB_CONFIGURED = all(FIREBASE_WEB_CONFIG.values())
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_dashboard(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"admin_uid": ADMIN_UID, "firebase_enabled": FIREBASE_ENABLED},
+        {
+            "admin_uid": ADMIN_UID,
+            "firebase_enabled": FIREBASE_ENABLED,
+            "firebase_web_config": FIREBASE_WEB_CONFIG,
+            "firebase_web_configured": FIREBASE_WEB_CONFIGURED,
+        },
     )
 
 
@@ -61,7 +82,12 @@ async def read_login(request: Request):
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"firebase_enabled": FIREBASE_ENABLED},
+        {
+            "firebase_enabled": FIREBASE_ENABLED,
+            "admin_uid": ADMIN_UID,
+            "firebase_web_config": FIREBASE_WEB_CONFIG,
+            "firebase_web_configured": FIREBASE_WEB_CONFIGURED,
+        },
     )
 
 
@@ -70,7 +96,12 @@ async def read_admin(request: Request):
     return templates.TemplateResponse(
         request,
         "admin.html",
-        {"admin_uid": ADMIN_UID, "firebase_enabled": FIREBASE_ENABLED},
+        {
+            "admin_uid": ADMIN_UID,
+            "firebase_enabled": FIREBASE_ENABLED,
+            "firebase_web_config": FIREBASE_WEB_CONFIG,
+            "firebase_web_configured": FIREBASE_WEB_CONFIGURED,
+        },
     )
 
 

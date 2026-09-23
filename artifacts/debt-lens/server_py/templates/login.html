@@ -5,18 +5,73 @@
   <h1 style="margin-top:0; font-size:1.5rem;">تسجيل الدخول</h1>
   <p class="muted">سجّل دخولك للوصول إلى ملفك المالي في DebtLens.</p>
 
-  {% if not firebase_enabled %}
+  {% if not firebase_enabled or not firebase_web_configured %}
   <p class="badge badge-warn">تسجيل الدخول غير متاح مؤقتًا (لم يتم إعداد Firebase على الخادم)</p>
-  {% endif %}
-
+  {% else %}
   <form id="login-form">
     <label for="email">البريد الإلكتروني</label>
-    <input type="email" id="email" name="email" required />
+    <input type="email" id="email" name="email" required autocomplete="email" />
 
     <label for="password">كلمة المرور</label>
-    <input type="password" id="password" name="password" required />
+    <input type="password" id="password" name="password" required autocomplete="current-password" />
 
-    <button type="submit" class="btn" style="width:100%;">دخول</button>
+    <p id="login-error" class="badge badge-warn" style="display:none; margin-bottom:1rem;"></p>
+
+    <button type="submit" class="btn" id="login-submit" style="width:100%;">دخول</button>
   </form>
+  {% endif %}
 </div>
+
+{% if firebase_enabled and firebase_web_configured %}
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import {
+    getAuth,
+    signInWithEmailAndPassword,
+  } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+  const firebaseConfig = {{ firebase_web_config | tojson }};
+  const ADMIN_UID = {{ admin_uid | tojson }};
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  const ARABIC_ERRORS = {
+    "auth/invalid-email": "صيغة البريد الإلكتروني غير صحيحة.",
+    "auth/invalid-credential": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+    "auth/user-not-found": "لا يوجد حساب بهذا البريد الإلكتروني.",
+    "auth/wrong-password": "كلمة المرور غير صحيحة.",
+    "auth/too-many-requests": "عدد محاولات كبير، حاول لاحقًا.",
+    "auth/network-request-failed": "تعذّر الاتصال بالخادم، تحقق من اتصالك بالإنترنت.",
+  };
+
+  const form = document.getElementById("login-form");
+  const errorBox = document.getElementById("login-error");
+  const submitBtn = document.getElementById("login-submit");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جارٍ تسجيل الدخول...";
+
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      const idToken = await credential.user.getIdToken();
+      localStorage.setItem("debtlens_id_token", idToken);
+      localStorage.setItem("debtlens_uid", credential.user.uid);
+
+      window.location.href = credential.user.uid === ADMIN_UID ? "/admin" : "/";
+    } catch (error) {
+      errorBox.textContent = ARABIC_ERRORS[error.code] || "تعذّر تسجيل الدخول. حاول مرة أخرى.";
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "دخول";
+    }
+  });
+</script>
+{% endif %}
 {% endblock %}

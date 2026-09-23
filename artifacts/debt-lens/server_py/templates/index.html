@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}لوحة التحكم - DebtLens{% endblock %}
 {% block header_extra %}
-<a href="/login" class="btn btn-outline" style="color:#f3d98b;border-color:#f3d98b;">تسجيل الدخول</a>
+<span id="user-bar" style="display:none; display:flex; align-items:center; gap:0.75rem;">
+  <span id="user-email" class="muted" style="color:#f3d98b;"></span>
+  <button id="logout-btn" class="btn btn-outline" style="color:#f3d98b;border-color:#f3d98b;">تسجيل الخروج</button>
+</span>
+<a id="login-link" href="/login" class="btn btn-outline" style="color:#f3d98b;border-color:#f3d98b;">تسجيل الدخول</a>
 {% endblock %}
 {% block content %}
 <div class="card">
@@ -22,4 +26,43 @@
     {% endif %}
   </p>
 </div>
+
+{% if firebase_enabled and firebase_web_configured %}
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+  const firebaseConfig = {{ firebase_web_config | tojson }};
+  const ADMIN_UID = {{ admin_uid | tojson }};
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      localStorage.removeItem("debtlens_id_token");
+      localStorage.removeItem("debtlens_uid");
+      window.location.href = "/login";
+      return;
+    }
+
+    if (user.uid === ADMIN_UID) {
+      window.location.href = "/admin";
+      return;
+    }
+
+    localStorage.setItem("debtlens_id_token", await user.getIdToken());
+    localStorage.setItem("debtlens_uid", user.uid);
+
+    document.getElementById("login-link").style.display = "none";
+    const bar = document.getElementById("user-bar");
+    bar.style.display = "flex";
+    document.getElementById("user-email").textContent = user.email || user.uid;
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    await signOut(auth);
+  });
+</script>
+{% endif %}
 {% endblock %}
