@@ -15,6 +15,7 @@ export interface UserProfile {
   employerName?: string;
   employmentType?: 'permanent' | 'temporary' | 'unemployed';
   hasOwnBusiness?: boolean;
+  isRegisteredGuarantor?: boolean;
   debts?: { lenderName: string; startDate: string; remainingAmount: number }[];
   kycPhotoPaths?: { idFront: string; idBack: string; selfie: string };
   profileCompleted?: boolean;
