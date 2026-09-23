@@ -103,16 +103,41 @@ class FakeDocRef:
         return FakeFirestoreDoc(self._data is not None, self._data)
 
 
+GUARANTOR_UID = "loan-application-admin-test-guarantor"
+RELATIONSHIP_ID = "rel-1"
+
+
 class FakeCollection:
+    def __init__(self, name, relationships: dict[str, dict]):
+        self._name = name
+        self._relationships = relationships
+
     def document(self, doc_id):
-        if doc_id == CUSTOMER_UID:
+        if self._name == "users" and doc_id == CUSTOMER_UID:
             return FakeDocRef({"kycVerification": {"typedFullName": "أحمد الزعبي"}})
+        if self._name == "guarantorRelationships" and doc_id in self._relationships:
+            return FakeDocRef(self._relationships[doc_id])
         return FakeDocRef(None)
 
 
 class FakeDb:
+    def __init__(self, relationships: dict[str, dict] | None = None):
+        self._relationships = relationships or {}
+
     def collection(self, name):
-        return FakeCollection()
+        return FakeCollection(name, self._relationships)
+
+
+def _approved_relationship(**overrides) -> dict:
+    base = {
+        "requesterUid": CUSTOMER_UID,
+        "requesterName": "أحمد الزعبي",
+        "guarantorUid": GUARANTOR_UID,
+        "status": "approved",
+        "applicationId": 1,
+    }
+    base.update(overrides)
+    return base
 
 
 @pytest.fixture()
@@ -140,7 +165,7 @@ class TestAdminLoanApplicationEndpoints:
     def teardown_method(self, method):
         app.dependency_overrides.pop(get_current_user, None)
 
-    def _client(self, monkeypatch):
+    def _client(self, monkeypatch, relationships: dict[str, dict] | None = None):
         # admin_routes.py imports loan_application_store *inside* each route
         # function (`import loan_application_store`), so patching attributes
         # on admin_routes itself has no effect -- the patch must land on the
@@ -149,7 +174,7 @@ class TestAdminLoanApplicationEndpoints:
         monkeypatch.setattr(loan_application_store, "list_applications_by_status", self.fake_store.list_applications_by_status)
         monkeypatch.setattr(loan_application_store, "get_loan_application", self.fake_store.get_loan_application)
         monkeypatch.setattr(loan_application_store, "update_admin_decision", self.fake_store.update_admin_decision)
-        monkeypatch.setattr(admin_routes, "_get_db", lambda: FakeDb())
+        monkeypatch.setattr(admin_routes, "_get_db", lambda: FakeDb(relationships))
         monkeypatch.setattr(notifications, "notify", lambda *args, **kwargs: None)
         app.dependency_overrides[get_current_user] = lambda: {"uid": ADMIN_UID}
         return TestClient(app)
@@ -213,6 +238,82 @@ class TestAdminLoanApplicationEndpoints:
             json={"application_id": 999, "decision": "approved"},
         )
         assert response.status_code == 404
+
+    def test_decision_notifies_linked_guarantor(self, monkeypatch, openapi_spec):
+        self.rows[1]["guarantor_relationship_id"] = RELATIONSHIP_ID
+        client = self._client(monkeypatch, relationships={RELATIONSHIP_ID: _approved_relationship()})
+
+        notify_calls = []
+        monkeypatch.setattr(
+            notifications,
+            "notify",
+            lambda db, *, uid, notif_type, title, message, related_id=None: notify_calls.append(
+                {"uid": uid, "type": notif_type, "title": title, "message": message}
+            ),
+        )
+
+        response = client.post(
+            "/api/admin/loan-application-decision",
+            json={"application_id": 1, "decision": "approved"},
+        )
+        assert response.status_code == 200
+
+        guarantor_calls = [c for c in notify_calls if c["uid"] == GUARANTOR_UID]
+        assert len(guarantor_calls) == 1
+        assert guarantor_calls[0]["type"] == "guarantor_backed_application_approved"
+        # Message must be unambiguous that this is about a guarantee they gave,
+        # not their own application.
+        assert "كفلته" in guarantor_calls[0]["message"] or "كفيل" in guarantor_calls[0]["message"]
+
+        applicant_calls = [c for c in notify_calls if c["uid"] == CUSTOMER_UID]
+        assert len(applicant_calls) == 1
+
+    def test_decision_with_missing_relationship_skips_guarantor(self, monkeypatch):
+        self.rows[1]["guarantor_relationship_id"] = "unknown-relationship"
+        client = self._client(monkeypatch, relationships={})
+
+        notify_calls = []
+        monkeypatch.setattr(
+            notifications,
+            "notify",
+            lambda db, *, uid, notif_type, title, message, related_id=None: notify_calls.append(uid),
+        )
+
+        response = client.post(
+            "/api/admin/loan-application-decision",
+            json={"application_id": 1, "decision": "rejected"},
+        )
+        assert response.status_code == 200
+        assert GUARANTOR_UID not in notify_calls
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param({"status": "pending"}, id="not-yet-approved"),
+            pytest.param({"status": "declined"}, id="declined"),
+            pytest.param({"requesterUid": "someone-else-uid"}, id="wrong-requester"),
+            pytest.param({"applicationId": 999}, id="wrong-application"),
+        ],
+    )
+    def test_decision_skips_guarantor_when_relationship_does_not_validate(self, monkeypatch, overrides):
+        self.rows[1]["guarantor_relationship_id"] = RELATIONSHIP_ID
+        client = self._client(
+            monkeypatch, relationships={RELATIONSHIP_ID: _approved_relationship(**overrides)}
+        )
+
+        notify_calls = []
+        monkeypatch.setattr(
+            notifications,
+            "notify",
+            lambda db, *, uid, notif_type, title, message, related_id=None: notify_calls.append(uid),
+        )
+
+        response = client.post(
+            "/api/admin/loan-application-decision",
+            json={"application_id": 1, "decision": "approved"},
+        )
+        assert response.status_code == 200
+        assert GUARANTOR_UID not in notify_calls
 
     def test_non_admin_is_forbidden(self, monkeypatch):
         monkeypatch.setattr(loan_application_store, "list_applications_by_status", self.fake_store.list_applications_by_status)

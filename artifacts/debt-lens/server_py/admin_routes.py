@@ -1522,4 +1522,49 @@ def loan_application_decision(body: LoanApplicationDecisionBody, admin: dict = D
         related_id=str(body.application_id),
     )
 
+    relationship_id = application.get("guarantor_relationship_id")
+    if relationship_id:
+        try:
+            relationship_snapshot = db.collection("guarantorRelationships").document(relationship_id).get()
+        except Exception:  # noqa: BLE001 - a lookup failure must never break the decision flow
+            logger.exception(
+                "Failed to look up guarantor relationship %s for loan application %s",
+                relationship_id,
+                body.application_id,
+            )
+            relationship_snapshot = None
+
+        if relationship_snapshot is not None and relationship_snapshot.exists:
+            relationship = relationship_snapshot.to_dict() or {}
+            guarantor_uid = relationship.get("guarantorUid")
+            applicant_name = relationship.get("requesterName") or "الشخص الذي كفلته"
+            # Only notify when this relationship is an admin-approved guarantee
+            # that actually backs *this* application and *this* applicant --
+            # a caller-supplied relationship id could otherwise point at an
+            # unrelated (or not-yet-approved) relationship.
+            relationship_is_valid = (
+                relationship.get("status") == "approved"
+                and relationship.get("requesterUid") == application["uid"]
+                and relationship.get("applicationId") == body.application_id
+            )
+            if guarantor_uid and relationship_is_valid:
+                if body.decision == "approved":
+                    guarantor_title, guarantor_message = (
+                        "تمت الموافقة على الطلب الذي كفلته",
+                        f"تمت الموافقة النهائية على طلب التمويل الذي كفلته لـ {applicant_name}.",
+                    )
+                else:
+                    guarantor_title, guarantor_message = (
+                        "رُفض الطلب الذي كفلته",
+                        f"رُفض طلب التمويل الذي كفلته لـ {applicant_name} بعد المراجعة النهائية.",
+                    )
+                notify(
+                    db,
+                    uid=guarantor_uid,
+                    notif_type=f"guarantor_backed_application_{body.decision}",
+                    title=guarantor_title,
+                    message=guarantor_message,
+                    related_id=str(body.application_id),
+                )
+
     return updated
