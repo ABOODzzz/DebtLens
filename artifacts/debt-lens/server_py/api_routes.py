@@ -418,7 +418,45 @@ def _parse_loan_assessment_json(text: str) -> dict:
     for field in ["recommended_amount", "interest_rate", "term_months", "monthly_installment", "total_repayment"]:
         data.setdefault(field, None)
 
+    credit_score = data.get("credit_score")
+    if not isinstance(credit_score, (int, float)) or not (300 <= credit_score <= 850):
+        data["credit_score"] = None
+    else:
+        data["credit_score"] = int(round(credit_score))
+
     return data
+
+
+def _fallback_credit_score(assessment_data: dict, eligible: bool) -> int:
+    """
+    Deterministic fallback used only when Claude doesn't return a usable
+    credit_score -- a simple, transparent heuristic on the same 300-850
+    scale, driven by the current debt-to-income ratio and eligibility, so
+    the UI always has a number to render.
+    """
+    dti = assessment_data["debt_to_income_percentage"]
+    score = 850 - (dti * 4)
+    if not eligible:
+        score -= 40
+    return int(max(300, min(850, round(score))))
+
+
+# Bands loosely mirror the familiar FICO-style ranges so the number reads as
+# a recognizable "credit score" rather than an arbitrary metric.
+_CREDIT_SCORE_BANDS = [
+    (579, "ضعيف", "#dc2626"),
+    (669, "متوسط", "#f59e0b"),
+    (739, "جيد", "#eab308"),
+    (799, "جيد جدًا", "#84cc16"),
+    (850, "ممتاز", "#16a34a"),
+]
+
+
+def _credit_score_band(score: int) -> tuple[str, str]:
+    for ceiling, label, color in _CREDIT_SCORE_BANDS:
+        if score <= ceiling:
+            return label, color
+    return _CREDIT_SCORE_BANDS[-1][1], _CREDIT_SCORE_BANDS[-1][2]
 
 
 def _generate_loan_assessment_via_claude(assessment_data: dict, business_info: dict, employment_status: str, has_own_business: bool) -> dict:
@@ -445,10 +483,15 @@ def _generate_loan_assessment_via_claude(assessment_data: dict, business_info: d
 قاعدة صارمة يجب احترامها دائمًا: قسط أي قرض جديد يجب ألا يرفع نسبة الدين الإجمالية إلى الدخل (الالتزامات الحالية + القسط الجديد، مقسومة على الدخل الشهري) فوق ما يقارب 40-45%. \
 إذا كانت نسبة الدين الحالية قريبة من هذا الحد أو تجاوزته، أو كان الدخل غير كافٍ أو غير مستقر، فالعميل غير مؤهل حاليًا -- في هذه الحالة لا تقترح أي مبلغ إطلاقًا، واشرح بوضوح أن السبب هو تجاوز الحد الآمن، وانصح بسداد جزء من الديون الحالية أولاً بدلاً من اقتراح قرض جديد.
 
+بالإضافة إلى ذلك، احسب "درجة ائتمانية" عامة للعميل (credit_score) على مقياس عالمي مألوف من 300 إلى 850 (كما في أنظمة التصنيف الائتماني المعروفة)، حيث 300 هي الأضعف و850 هي الأفضل. \
+هذه الدرجة تعكس الوضع الائتماني العام للعميل (استقرار الدخل، نسبة الدين إلى الدخل، عدد جهات التمويل النشطة، الحالة الوظيفية) وليست مرتبطة فقط بأهليته لهذا القرض تحديدًا -- \
+أي أعطِ درجة حتى لو كان العميل غير مؤهل حاليًا لقرض جديد، فهي تقيس صحته الائتمانية العامة لا قرار هذا الطلب فقط.
+
 أعد ردك بصيغة JSON فقط، بدون أي نص إضافي قبله أو بعده، وبالضبط بالشكل التالي:
 {{
   "eligible": true | false,
   "risk_tier": "منخفض" | "متوسط" | "مرتفع",
+  "credit_score": رقم صحيح بين 300 و850,
   "recommended_amount": رقم أو null إذا غير مؤهل,
   "interest_rate": رقم (نسبة سنوية مئوية) أو null إذا غير مؤهل,
   "term_months": رقم صحيح بالأشهر أو null إذا غير مؤهل,
@@ -552,9 +595,16 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
 
     verdict = _enforce_dti_ceiling(verdict, assessment_data)
 
+    if verdict["credit_score"] is None:
+        verdict["credit_score"] = _fallback_credit_score(assessment_data, verdict["eligible"])
+    credit_score_label, credit_score_color = _credit_score_band(verdict["credit_score"])
+
     return {
         "eligible": verdict["eligible"],
         "risk_tier": verdict["risk_tier"],
+        "credit_score": verdict["credit_score"],
+        "credit_score_label": credit_score_label,
+        "credit_score_color": credit_score_color,
         "recommended_amount": verdict["recommended_amount"],
         "interest_rate": verdict["interest_rate"],
         "term_months": verdict["term_months"],
