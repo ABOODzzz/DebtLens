@@ -249,7 +249,10 @@ def _decide_review(typed_full_name: str, verdict: dict) -> tuple[str, str]:
 
 @router.get("/status")
 def kyc_status(user: dict = Depends(get_current_user)):
-    """Current user's own identity review status, for their dashboard."""
+    """
+    Let the logged-in customer check their own identity-verification status.
+    Never exposes another user's data -- always reads users/{current uid}.
+    """
     try:
         db = get_firestore_client()
     except FirebaseUnavailableError as exc:
@@ -259,10 +262,10 @@ def kyc_status(user: dict = Depends(get_current_user)):
         ) from exc
 
     snapshot = db.collection("users").document(user["uid"]).get()
-    user_doc = snapshot.to_dict() if snapshot.exists else {}
-    user_doc = user_doc or {}
+    user_doc = snapshot.to_dict() or {} if snapshot.exists else {}
 
     return {
+        "has_submission": bool(user_doc.get("kycVerification")),
         "review_status": user_doc.get("reviewStatus") or "no_submission",
         "review_reason": user_doc.get("reviewReason"),
     }
