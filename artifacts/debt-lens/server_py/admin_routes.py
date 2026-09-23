@@ -1,20 +1,22 @@
 """
-Admin-only endpoint that turns an already-uploaded bank/loan statement file
-(PDF or image) into structured, Firestore-ready financial data via Claude.
+Admin-only endpoints backing the admin.html review dashboard.
 
-Flow:
-1. Admin has already uploaded a statement file somewhere and has its URL.
-2. We download the file and send it to Claude as a document/image, asking
-   for every transaction across every page (not a sample), plus loan terms
-   for financing statements.
-3. If the first response doesn't parse as JSON, we do one repair pass that
-   asks Claude to fix JSON *syntax* only, without inventing or changing data.
-4. We validate/coerce the parsed data, compute derived monthly and category
-   breakdowns server-side, and write the whole record to the target user's
-   Firestore document -- keyed by a sanitized version of the institution
-   name so re-analyzing the same institution overwrites its old entry
-   instead of piling up duplicates.
-5. Every call is logged to a per-user audit subcollection.
+Covers:
+- POST /analyze-statement: turns an already-uploaded bank/loan statement
+  file (PDF or image) into structured, Firestore-ready financial data.
+- POST /institution-request: drafts a formal letter to a lender/bank asking
+  for a user's full loan/account details.
+- POST /bank-request: same idea, but first runs a Claude vision call on the
+  user's on-file ID photo to confirm identity, then lists specific bank
+  accounts in the letter.
+- POST /user-insight: internal risk-tier note for the review team on one
+  pending user.
+- POST /portfolio-summary: ranks a batch of pending users by review
+  priority with a one-line explanation each.
+
+All Claude calls go through the same Anthropic client used elsewhere in the
+app, and any JSON response that doesn't parse gets one repair pass that
+fixes syntax only, never inventing data.
 """
 
 import base64
@@ -29,6 +31,7 @@ from pydantic import BaseModel
 
 from anthropic_client import ANTHROPIC_MODEL, anthropic_client
 from firebase_client import FirebaseUnavailableError, get_current_admin, get_firestore_client
+from user_data import get_user_financial_profile
 
 logger = logging.getLogger("debtlens")
 
@@ -507,4 +510,372 @@ def analyze_statement(body: AnalyzeStatementRequest, admin: dict = Depends(get_c
         "transaction_count": len(transactions),
         "transactions": transactions,
         "derived": derived,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for the letter-drafting / risk-note endpoints below
+# ---------------------------------------------------------------------------
+def _require_anthropic() -> None:
+    if anthropic_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI-assisted admin tools are currently unavailable.",
+        )
+
+
+def _get_db():
+    try:
+        return get_firestore_client()
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach the database right now. Please try again shortly.",
+        ) from exc
+
+
+def _get_user_doc(db, uid: str) -> dict:
+    snapshot = db.collection("users").document(uid).get()
+    if not snapshot.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No user found for uid={uid}")
+    return snapshot.to_dict() or {}
+
+
+def _customer_identity(user_doc: dict) -> tuple[str, str | None]:
+    """Best-known customer name + national ID, preferring KYC-verified data."""
+    kyc = user_doc.get("kycVerification") or {}
+    name = kyc.get("typedFullName") or kyc.get("extractedFullName") or "العميل"
+    national_id = kyc.get("extractedNationalId") or kyc.get("typedNationalId")
+    return name, national_id
+
+
+def _draft_letter(prompt: str, max_tokens: int = 768) -> str:
+    message = anthropic_client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _extract_response_text(message)
+
+
+# ---------------------------------------------------------------------------
+# POST /institution-request
+# ---------------------------------------------------------------------------
+class InstitutionRequestBody(BaseModel):
+    uid: str
+    institution_name: str
+    request_details: str | None = None
+
+
+@router.post("/institution-request")
+def institution_request(body: InstitutionRequestBody, admin: dict = Depends(get_current_admin)):
+    _require_anthropic()
+    db = _get_db()
+    user_doc = _get_user_doc(db, body.uid)
+    name, national_id = _customer_identity(user_doc)
+
+    id_line = f" (رقم الهوية الوطنية: {national_id})" if national_id else ""
+    details_line = (
+        f"\nتفاصيل إضافية مطلوبة: {body.request_details}" if body.request_details else ""
+    )
+
+    prompt = f"""اكتب خطابًا رسميًا باللغة العربية الفصحى موجهًا إلى {body.institution_name}، \
+يطلب فيه الحصول على كافة تفاصيل حسابات و/أو قروض العميل {name}{id_line} لدى هذه الجهة \
+(الرصيد الحالي، الأقساط الشهرية، تاريخ الفتح، حالة السداد، وأي التزامات قائمة).
+
+اذكر بوضوح أن هذا الطلب مُصرَّح به من قبل العميل نفسه، وأنه وافق على مشاركة بياناته المالية \
+لدى هذه الجهة مع منصة DebtLens لأغراض التحليل الائتماني ومراجعة أهليته لخدمات التمويل.{details_line}
+
+اجعل الخطاب رسميًا ومهذبًا ومختصرًا، بصيغة خطاب طلب موجه لبنك أو جهة تمويل. \
+اترك اسم الجهة المرسِلة [DebtLens] وتاريخ الخطاب [التاريخ] كما هي بين قوسين ليتم تعبئتها لاحقًا. \
+لا تخترع أرقام حسابات أو تواريخ أو تفاصيل لم تُعطَ لك."""
+
+    try:
+        letter = _draft_letter(prompt)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Institution request letter generation failed for uid=%s: %s", body.uid, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to draft the letter right now. Please try again shortly.",
+        ) from exc
+
+    return {
+        "uid": body.uid,
+        "customer_name": name,
+        "institution_name": body.institution_name,
+        "letter": letter,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /bank-request
+# ---------------------------------------------------------------------------
+class BankRequestBody(BaseModel):
+    uid: str
+    bank_name: str
+    bank_accounts: list[str]
+
+
+def _extract_identity_from_id_photo(file_block: dict) -> dict:
+    prompt_text = (
+        "استخرج الاسم الكامل ورقم الهوية الوطنية الظاهرين في صورة بطاقة الهوية المرفقة. "
+        'أعد الرد بصيغة JSON فقط، بدون أي نص إضافي، بالضبط بالشكل التالي: '
+        '{"full_name": "..." أو null إن لم يكن واضحًا, "national_id": "..." أو null إن لم يكن واضحًا}'
+    )
+
+    message = anthropic_client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=300,
+        messages=[{"role": "user", "content": [{"type": "text", "text": prompt_text}, file_block]}],
+    )
+    text = _extract_response_text(message)
+
+    data = _try_parse_json(text)
+    if data is None:
+        data = _fix_json_via_claude(text)
+    if not isinstance(data, dict):
+        raise ValueError("Could not obtain valid JSON from ID photo identity extraction.")
+
+    data.setdefault("full_name", None)
+    data.setdefault("national_id", None)
+    return data
+
+
+@router.post("/bank-request")
+def bank_request(body: BankRequestBody, admin: dict = Depends(get_current_admin)):
+    _require_anthropic()
+    db = _get_db()
+    user_doc = _get_user_doc(db, body.uid)
+
+    kyc = user_doc.get("kycVerification") or {}
+    id_photo_url = kyc.get("idPhotoUrl")
+    if not id_photo_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No ID photo on file for this user; cannot verify identity for a bank request.",
+        )
+
+    if not body.bank_accounts:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bank_accounts must be a non-empty list.")
+
+    downloaded = _download_file(id_photo_url)
+    if downloaded is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to download the user's ID photo.",
+        )
+    file_bytes, media_type = downloaded
+    file_block = _file_content_block(file_bytes, media_type)
+
+    try:
+        identity = _extract_identity_from_id_photo(file_block)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("ID photo identity extraction failed for uid=%s: %s", body.uid, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to extract identity from the ID photo.",
+        ) from exc
+
+    name = identity.get("full_name") or kyc.get("typedFullName") or "العميل"
+    national_id = identity.get("national_id") or kyc.get("typedNationalId")
+    id_line = f" (رقم الهوية الوطنية: {national_id})" if national_id else ""
+
+    accounts_lines = "\n".join(f"- {account}" for account in body.bank_accounts)
+
+    prompt = f"""اكتب خطابًا رسميًا باللغة العربية الفصحى موجهًا إلى {body.bank_name}، \
+يطلب فيه الحصول على كافة التفاصيل المتعلقة بالحسابات التالية العائدة للعميل {name}{id_line}:
+
+{accounts_lines}
+
+اذكر بوضوح أن هذا الطلب مُصرَّح به من قبل العميل نفسه، وأنه وافق على مشاركة بيانات هذه الحسابات \
+مع منصة DebtLens لأغراض التحليل الائتماني ومراجعة أهليته لخدمات التمويل.
+
+اجعل الخطاب رسميًا ومهذبًا ومختصرًا، بصيغة خطاب طلب موجه لبنك. \
+اترك اسم الجهة المرسِلة [DebtLens] وتاريخ الخطاب [التاريخ] كما هي بين قوسين ليتم تعبئتها لاحقًا. \
+لا تخترع أرقام حسابات أو تواريخ أو تفاصيل لم تُعطَ لك."""
+
+    try:
+        letter = _draft_letter(prompt)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Bank request letter generation failed for uid=%s: %s", body.uid, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to draft the letter right now. Please try again shortly.",
+        ) from exc
+
+    return {
+        "uid": body.uid,
+        "customer_name": name,
+        "national_id": national_id,
+        "bank_name": body.bank_name,
+        "bank_accounts": body.bank_accounts,
+        "letter": letter,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /user-insight
+# ---------------------------------------------------------------------------
+class UserInsightBody(BaseModel):
+    uid: str
+
+
+_INSIGHT_RECOMMENDATIONS = {"approve", "approve_with_more_docs", "reject"}
+
+
+def _parse_user_insight_json(text: str) -> dict:
+    data = _try_parse_json(text)
+    if data is None:
+        data = _fix_json_via_claude(text)
+    if not isinstance(data, dict):
+        raise ValueError("Could not obtain valid JSON from the user insight generation.")
+
+    if data.get("risk_tier") not in _RISK_TIERS_ARABIC_ADMIN:
+        raise ValueError("Missing or invalid 'risk_tier' in user insight JSON")
+    if not isinstance(data.get("concerns"), list) or not all(isinstance(c, str) for c in data["concerns"]):
+        raise ValueError("Missing or invalid 'concerns' in user insight JSON")
+    if data.get("recommendation") not in _INSIGHT_RECOMMENDATIONS:
+        raise ValueError("Missing or invalid 'recommendation' in user insight JSON")
+    if not isinstance(data.get("notes"), str) or not data["notes"].strip():
+        raise ValueError("Missing or invalid 'notes' in user insight JSON")
+
+    return data
+
+
+_RISK_TIERS_ARABIC_ADMIN = {"منخفض", "متوسط", "مرتفع"}
+
+
+@router.post("/user-insight")
+def user_insight(body: UserInsightBody, admin: dict = Depends(get_current_admin)):
+    _require_anthropic()
+
+    try:
+        profile = get_user_financial_profile(body.uid)
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach the database right now. Please try again shortly.",
+        ) from exc
+
+    accounts_lines = (
+        "\n".join(
+            f"- {i['institution_name']}: رصيد متبقٍ {i['remaining_balance']} دينار، "
+            f"قسط شهري {i['monthly_installment']} دينار"
+            for i in profile["institution_breakdown"]
+        )
+        or "لا توجد حسابات/قروض موثقة عبر كشوفات."
+    )
+    declared_companies = ", ".join(profile["profile"]["declared_financing_companies"]) or "لا يوجد"
+    dti = profile["debt_to_income_percentage"]
+
+    prompt = f"""أنت محلل مخاطر داخلي في مؤسسة تمويل، تكتب ملاحظة داخلية موجزة لفريق المراجعة (هذه الملاحظة داخلية وليست موجهة للعميل).
+
+بيانات المستخدم قيد المراجعة:
+- الدخل الشهري: {profile['profile']['monthly_income']} دينار (مصدر البيانات: {profile['data_source']})
+- الحالة الوظيفية: {profile['profile']['employment_status']}
+- يمتلك مشروعًا خاصًا: {"نعم" if profile['profile']['has_own_business'] else "لا"}
+- شركات التمويل المصرح بها من العميل: {declared_companies}
+- الحسابات/القروض الموثقة عبر الكشوفات:
+{accounts_lines}
+- نسبة الدين إلى الدخل: {dti if dti is not None else "غير متوفرة"}%
+- علامة تكديس القروض (أخذ قروض من عدة جهات): {"نعم" if profile['stacking_flag'] else "لا"}
+
+قيّم مستوى المخاطرة، وحدد أهم النقاط التي يجب على فريق المراجعة التحقق منها، وقدّم توصية.
+
+أعد ردك بصيغة JSON فقط، بدون أي نص إضافي قبله أو بعده، وبالضبط بالشكل التالي:
+{{"risk_tier": "منخفض" | "متوسط" | "مرتفع", "concerns": ["نقطة للتحقق منها 1", "نقطة للتحقق منها 2"], "recommendation": "approve" | "approve_with_more_docs" | "reject", "notes": "ملاحظة داخلية موجزة من سطرين إلى ثلاثة أسطر للفريق"}}"""
+
+    try:
+        message = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=700,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = _extract_response_text(message)
+        insight = _parse_user_insight_json(text)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("User insight generation failed for uid=%s: %s", body.uid, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to generate a user insight right now. Please try again shortly.",
+        ) from exc
+
+    return {
+        "uid": body.uid,
+        "data_source": profile["data_source"],
+        "debt_to_income_percentage": dti,
+        "stacking_flag": profile["stacking_flag"],
+        "risk_tier": insight["risk_tier"],
+        "concerns": insight["concerns"],
+        "recommendation": insight["recommendation"],
+        "notes": insight["notes"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /portfolio-summary
+# ---------------------------------------------------------------------------
+class PortfolioSummaryBody(BaseModel):
+    uids: list[str]
+
+
+@router.post("/portfolio-summary")
+def portfolio_summary(body: PortfolioSummaryBody, admin: dict = Depends(get_current_admin)):
+    if not body.uids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uids must be a non-empty list.")
+
+    _require_anthropic()
+    db = _get_db()
+
+    entries = []
+    for uid in body.uids:
+        try:
+            profile = get_user_financial_profile(uid)
+        except FirebaseUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to reach the database right now. Please try again shortly.",
+            ) from exc
+
+        user_doc = db.collection("users").document(uid).get().to_dict() or {}
+        name, _ = _customer_identity(user_doc)
+
+        entries.append(
+            {
+                "uid": uid,
+                "name": name,
+                "active_loans": profile["financing_institutions_with_balance"],
+                "debt_to_income_percentage": profile["debt_to_income_percentage"],
+                "stacking_flag": profile["stacking_flag"],
+                "data_source": profile["data_source"],
+            }
+        )
+
+    lines = "\n".join(
+        f"- {e['name']} (uid: {e['uid']}) — عدد جهات التمويل النشطة: {e['active_loans']}، "
+        f"نسبة الدين إلى الدخل: {e['debt_to_income_percentage'] if e['debt_to_income_percentage'] is not None else 'غير متوفرة'}%، "
+        f"تكديس قروض: {'نعم' if e['stacking_flag'] else 'لا'}، مصدر البيانات: {e['data_source']}"
+        for e in entries
+    )
+
+    prompt = f"""أنت محلل مخاطر داخلي في مؤسسة تمويل. لديك قائمة بالمستخدمين الذين ينتظرون مراجعة طلباتهم:
+
+{lines}
+
+رتّب هؤلاء المستخدمين حسب أولوية المراجعة، بحيث يكون أصحاب جهات التمويل النشطة المتعددة (تكديس القروض) في المقدمة، \
+ثم من لديهم أعلى نسبة دين إلى دخل. اكتب سطرًا واحدًا فقط لكل مستخدم يشرح سبب ترتيبه، مستخدمًا اسمه كما ورد أعلاه، \
+على شكل قائمة عربية مرقّمة (1. 2. 3. ...) بالترتيب من الأعلى أولوية إلى الأقل."""
+
+    try:
+        ranked_summary = _draft_letter(prompt, max_tokens=1024)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Portfolio summary generation failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to generate the portfolio summary right now. Please try again shortly.",
+        ) from exc
+
+    return {
+        "user_count": len(entries),
+        "ranked_summary": ranked_summary,
     }
