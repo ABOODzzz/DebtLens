@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}لوحة الإدارة - DebtLens{% endblock %}
+{% block content %}
+<div class="card">
+  <h1 style="margin-top:0;">لوحة الإدارة</h1>
+  <p class="muted">
+    مخصصة للمستخدم الإداري فقط (UID: <code>{{ admin_uid }}</code>). سيتم عرض قائمة المستخدمين
+    وطلبات مراجعة الهوية هنا بعد ربط نقاط النهاية الإدارية بواجهة FastAPI.
+  </p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0; font-size:1.1rem;">حالة الخادم</h2>
+  <p class="muted">
+    Firebase Admin:
+    {% if firebase_enabled %}
+      <span class="badge" style="background:#e4f4e7;color:#1c7a37;">متصل</span>
+    {% else %}
+      <span class="badge badge-warn">غير مُعد (وضع محدود)</span>
+    {% endif %}
+  </p>
+</div>
+{% endblock %}
