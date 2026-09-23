@@ -349,6 +349,35 @@ class TestAdminLoanApplicationEndpoints:
         assert data["applications"][0]["status"] == "submitted"
         assert data["applications"][0]["decision_history"] == []
 
+    def test_list_returns_complete_decision_history_for_export(self, monkeypatch, openapi_spec):
+        self.rows[1]["status"] = "approved"
+        self.fake_store.history[1] = [
+            {
+                "id": 11,
+                "application_id": 1,
+                "decision": "approved",
+                "reason": None,
+                "admin_uid": ADMIN_UID,
+                "created_at": "2026-09-22T09:30:00+00:00",
+            },
+            {
+                "id": 12,
+                "application_id": 1,
+                "decision": "rejected",
+                "reason": "دخل غير مستقر",
+                "admin_uid": "second-admin",
+                "created_at": "2026-09-23T09:30:00+00:00",
+            },
+        ]
+        client = self._client(monkeypatch)
+
+        response = client.get("/api/admin/loan-applications")
+        assert response.status_code == 200
+        data = response.json()
+
+        _validate_against_schema(data, "AdminLoanApplicationsList", openapi_spec)
+        assert data["applications"][0]["decision_history"] == self.fake_store.history[1]
+
     def test_approve_moves_application_to_terminal_state(self, monkeypatch, openapi_spec):
         client = self._client(monkeypatch)
 

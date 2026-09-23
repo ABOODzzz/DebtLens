@@ -6,3 +6,4 @@
 - [DebtLens guarantor network model](debtlens-guarantor-network-model.md) — many-to-many relationships live in `guarantorRelationships` docs, never a field on the user; caps + admin-only approval + shared `notifications` collection.
 - [DebtLens loan application flow](debtlens-loan-application-flow.md) — Postgres `loan_applications` cross-linked to Firestore `guarantorRelationships`; status derived deterministically from DTI ceilings, not AI.
 - [DebtLens loan_applications lifecycle & test mocking](debtlens-loan-application-lifecycle.md) — status flow through terminal admin decision; admin_routes.py uses inline `import module` so tests must monkeypatch the real module, not admin_routes' attribute.
+- [Shared API client generated declarations](api-client-generated-dist.md) — regenerate and rebuild shared API declarations after OpenAPI changes before diagnosing missing frontend exports.

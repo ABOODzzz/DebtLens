@@ -14,8 +14,11 @@ import {
   useSubmitLoanApplicationDecision,
   useReviseLoanApplicationDecision,
 } from "@workspace/api-client-react";
-import type { LoanApplicationReviseInputNewStatus } from "@workspace/api-client-react";
-import type { GuarantorReviseInputNewStatus } from "@workspace/api-client-react";
+import type {
+  AdminLoanApplicationSummary,
+  GuarantorReviseInputNewStatus,
+  LoanApplicationReviseInputNewStatus,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw, History } from "lucide-react";
+import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw, History, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminPage() {
@@ -642,6 +645,35 @@ function loanDecisionHistoryLabel(decision: string) {
   return "إعادة للمراجعة";
 }
 
+function csvCell(value: string | number | null | undefined) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function exportLoanDecisionHistory(application: AdminLoanApplicationSummary) {
+  const rows = [
+    ["application_id", "customer_name", "decision", "reason", "admin_uid", "created_at"],
+    ...application.decision_history.map((entry) => [
+      application.id,
+      application.customer_name,
+      entry.decision,
+      entry.reason,
+      entry.admin_uid,
+      entry.created_at,
+    ]),
+  ];
+  const csv = `\ufeff${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = downloadUrl;
+  link.download = `loan-decision-history-${application.id}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(downloadUrl);
+}
+
 function LoanApplicationsTab() {
   const queryClient = useQueryClient();
   const applicationsQuery = useListLoanApplications();
@@ -793,9 +825,19 @@ function LoanApplicationsTab() {
 
                 {app.decision_history.length > 0 && (
                   <div className="border border-slate-200 rounded-lg p-3 space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                      <History className="w-4 h-4" />
-                      سجل قرارات الإدارة
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                        <History className="w-4 h-4" />
+                        سجل قرارات الإدارة
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => exportLoanDecisionHistory(app)}
+                      >
+                        <Download className="w-4 h-4 ml-1" />
+                        تصدير السجل
+                      </Button>
                     </div>
                     <div className="space-y-2">
                       {app.decision_history.slice().reverse().map((entry, index) => (
