@@ -25,8 +25,7 @@ export interface AdminUser {
   debt_to_income_percentage?: number | null;
   stacking_flag: boolean;
   statement_count: number;
-  /** @nullable */
-  guarantor_uid?: string | null;
+  guarantor_count?: number;
   /** @nullable */
   updated_at?: Date | null;
 }

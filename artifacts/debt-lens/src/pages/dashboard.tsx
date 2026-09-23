@@ -1,4 +1,4 @@
-import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorStatus, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorStatusQueryKey, GuarantorStatus } from "@workspace/api-client-react";
+import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorNetwork, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorNetworkQueryKey, GuarantorNetwork, GuarantorRelationshipSummary } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +46,7 @@ export default function DashboardPage() {
 function DashboardContent() {
   const { profile } = useAuth();
   const summaryQuery = useGetFinancialSummary();
-  const guarantorQuery = useGetGuarantorStatus();
+  const guarantorQuery = useGetGuarantorNetwork();
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
 
   if (summaryQuery.isLoading) {
@@ -194,15 +194,16 @@ function guarantorStatusClass(status: string) {
   }
 }
 
-function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorStatus; isLoading: boolean; isError: boolean }) {
+function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNetwork; isLoading: boolean; isError: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const requestMutation = useRequestGuarantor();
   const respondMutation = useRespondToGuarantorRequest();
   const [nationalId, setNationalId] = useState("");
-  const [respondingUid, setRespondingUid] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [historyTab, setHistoryTab] = useState<"active" | "pending" | "closed">("active");
 
-  const invalidateStatus = () => queryClient.invalidateQueries({ queryKey: getGetGuarantorStatusQueryKey() });
+  const invalidateNetwork = () => queryClient.invalidateQueries({ queryKey: getGetGuarantorNetworkQueryKey() });
 
   const handleRequest = async () => {
     if (!nationalId.trim()) return;
@@ -210,7 +211,7 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
       const res = await requestMutation.mutateAsync({ data: { guarantor_national_id: nationalId.trim() } });
       toast({ title: "تم إرسال الطلب", description: `تم إرسال طلب الكفالة إلى ${res.guarantor_name}.` });
       setNationalId("");
-      invalidateStatus();
+      invalidateNetwork();
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -220,24 +221,28 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
     }
   };
 
-  const handleRespond = async (requesterUid: string, approve: boolean) => {
-    setRespondingUid(requesterUid);
+  const handleRespond = async (relationshipId: string, approve: boolean) => {
+    setRespondingId(relationshipId);
     try {
-      await respondMutation.mutateAsync({ data: { requester_uid: requesterUid, approve } });
-      invalidateStatus();
+      await respondMutation.mutateAsync({ data: { relationship_id: relationshipId, approve } });
+      invalidateNetwork();
     } catch (error) {
       toast({ variant: "destructive", title: "تعذر تسجيل الرد", description: "يرجى المحاولة مرة أخرى." });
     } finally {
-      setRespondingUid(null);
+      setRespondingId(null);
     }
   };
 
   if (isLoading) return null;
   if (isError || !data) return null;
 
-  const { outgoing_request, approved_guarantor_uid, incoming_requests } = data;
-  const incomingList = Object.entries(incoming_requests || {});
-  const canRequestNewGuarantor = !outgoing_request || outgoing_request.status === 'declined' || outgoing_request.status === 'rejected';
+  const { outgoing, incoming, guarantor_capacity, requester_capacity } = data;
+  const allRelationships = [...outgoing, ...incoming];
+  const activeRelationships = allRelationships.filter((r) => r.status === "approved");
+  const pendingIncoming = incoming.filter((r) => r.status === "pending");
+  const pendingOutgoing = outgoing.filter((r) => r.status === "pending" || r.status === "awaiting_admin_review");
+  const closedRelationships = allRelationships.filter((r) => r.status === "declined" || r.status === "rejected");
+  const canRequestNewGuarantor = requester_capacity.used_count < requester_capacity.max_count;
 
   return (
     <Card className="border-secondary/20 bg-secondary/5">
@@ -252,25 +257,54 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
           </div>
         </div>
 
-        {approved_guarantor_uid && (
-          <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg text-sm">
-            <span className="text-green-800 font-medium">لديك كفيل معتمد يدعم طلبك التمويلي</span>
-            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">معتمد</span>
+        {/* Capacity summary */}
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="p-2.5 bg-background border rounded-lg">
+            <p className="text-muted-foreground mb-0.5">كفلاؤك</p>
+            <p className="font-bold text-primary">{requester_capacity.used_count} / {requester_capacity.max_count}</p>
+          </div>
+          <div className="p-2.5 bg-background border rounded-lg">
+            <p className="text-muted-foreground mb-0.5">من تكفلهم أنت</p>
+            <p className="font-bold text-primary">{guarantor_capacity.used_count} / {guarantor_capacity.max_count} (حتى {guarantor_capacity.max_amount.toLocaleString()} د.أ)</p>
+          </div>
+        </div>
+
+        {pendingIncoming.length > 0 && (
+          <div>
+            <p className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Users className="w-4 h-4" /> طلبات كفالة واردة إليك
+            </p>
+            <div className="space-y-2">
+              {pendingIncoming.map((request) => (
+                <div key={request.id} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm gap-2">
+                  <span className="truncate">{request.requester_name} (بحد أقصى {request.max_amount.toLocaleString()} د.أ)</span>
+                  <div className="flex gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+                      disabled={respondMutation.isPending && respondingId === request.id}
+                      onClick={() => handleRespond(request.id, true)}
+                    >
+                      {respondMutation.isPending && respondingId === request.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="bg-red-50 text-red-700 hover:bg-red-100 border-red-200"
+                      disabled={respondMutation.isPending && respondingId === request.id}
+                      onClick={() => handleRespond(request.id, false)}
+                    >
+                      {respondMutation.isPending && respondingId === request.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {outgoing_request && !approved_guarantor_uid && (
-          <div className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm">
-            <span>
-              طلب الكفالة إلى {outgoing_request.guarantorName || "الكفيل"} (بحد أقصى {outgoing_request.maxAmount.toLocaleString()} د.أ)
-            </span>
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${guarantorStatusClass(outgoing_request.status)}`}>
-              {guarantorStatusLabel(outgoing_request.status)}
-            </span>
-          </div>
-        )}
-
-        {canRequestNewGuarantor && !approved_guarantor_uid && (
+        {canRequestNewGuarantor && (
           <div className="p-3 bg-background border rounded-lg space-y-2">
             <Label htmlFor="guarantor-national-id" className="text-sm font-medium">طلب كفيل رقمي جديد</Label>
             <div className="flex gap-2">
@@ -289,48 +323,68 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
           </div>
         )}
 
-        {incomingList.length > 0 && (
+        {/* Guarantee history */}
+        {allRelationships.length > 0 && (
           <div>
-            <p className="text-sm font-medium mb-2 flex items-center gap-2">
-              <Users className="w-4 h-4" /> طلبات كفالة واردة إليك
-            </p>
-            <div className="space-y-2">
-              {incomingList.map(([requesterUid, request]) => (
-                <div key={requesterUid} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm gap-2">
-                  <span className="truncate">{request.requesterName || "عميل"}</span>
-                  {request.status === 'pending' ? (
-                    <div className="flex gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
-                        disabled={respondMutation.isPending && respondingUid === requesterUid}
-                        onClick={() => handleRespond(requesterUid, true)}
-                      >
-                        {respondMutation.isPending && respondingUid === requesterUid ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="bg-red-50 text-red-700 hover:bg-red-100 border-red-200"
-                        disabled={respondMutation.isPending && respondingUid === requesterUid}
-                        onClick={() => handleRespond(requesterUid, false)}
-                      >
-                        {respondMutation.isPending && respondingUid === requesterUid ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                  ) : (
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${guarantorStatusClass(request.status)}`}>
-                      {guarantorStatusLabel(request.status)}
-                    </span>
-                  )}
-                </div>
+            <div className="flex gap-1 mb-2 border-b">
+              {(
+                [
+                  { key: "active", label: `نشطة (${activeRelationships.length})` },
+                  { key: "pending", label: `قيد الانتظار (${pendingOutgoing.length + pendingIncoming.length})` },
+                  { key: "closed", label: `مرفوضة/منتهية (${closedRelationships.length})` },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setHistoryTab(tab.key)}
+                  className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-colors ${
+                    historyTab === tab.key ? "border-secondary text-primary" : "border-transparent text-muted-foreground hover:text-primary"
+                  }`}
+                >
+                  {tab.label}
+                </button>
               ))}
+            </div>
+            <div className="space-y-2">
+              {(historyTab === "active"
+                ? activeRelationships
+                : historyTab === "pending"
+                ? [...pendingOutgoing, ...pendingIncoming]
+                : closedRelationships
+              ).map((rel) => (
+                <GuarantorHistoryRow key={rel.id} rel={rel} />
+              ))}
+              {(historyTab === "active"
+                ? activeRelationships
+                : historyTab === "pending"
+                ? [...pendingOutgoing, ...pendingIncoming]
+                : closedRelationships
+              ).length === 0 && <p className="text-xs text-muted-foreground py-3 text-center">لا توجد سجلات في هذه الفئة</p>}
             </div>
           </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function GuarantorHistoryRow({ rel }: { rel: GuarantorRelationshipSummary }) {
+  const { user } = useAuth();
+  const isRequesterMe = rel.requester_uid === user?.uid;
+  const otherName = isRequesterMe ? rel.guarantor_name : rel.requester_name;
+  const roleLabel = isRequesterMe ? "كفيلك" : "تكفله أنت";
+  return (
+    <div className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm gap-2">
+      <div className="min-w-0">
+        <p className="truncate">
+          <span className="text-muted-foreground text-xs">{roleLabel}: </span>
+          {otherName} <span className="text-muted-foreground text-xs">({rel.max_amount.toLocaleString()} د.أ)</span>
+        </p>
+      </div>
+      <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${guarantorStatusClass(rel.status)}`}>
+        {guarantorStatusLabel(rel.status)}
+      </span>
+    </div>
   );
 }
 

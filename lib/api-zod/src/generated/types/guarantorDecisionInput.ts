@@ -8,7 +8,7 @@
 import type { GuarantorDecisionInputDecision } from './guarantorDecisionInputDecision';
 
 export interface GuarantorDecisionInput {
-  requester_uid: string;
+  relationship_id: string;
   decision: GuarantorDecisionInputDecision;
   /** @nullable */
   reason?: string | null;

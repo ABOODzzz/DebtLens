@@ -163,20 +163,25 @@ export interface LoanEligibilityResult {
   creditScoreLabel: string;
   creditScoreColor: string;
   guarantorBacked: boolean;
+  /** @nullable */
   recommendedAmount?: number | null;
+  /** @nullable */
   interestRate?: number | null;
+  /** @nullable */
   termMonths?: number | null;
+  /** @nullable */
   monthlyInstallment?: number | null;
+  /** @nullable */
   totalRepayment?: number | null;
   recommendation: string;
   basedOnRealData: boolean;
   currentDebtToIncomePercentage: number;
 }
 
-export type GuarantorRequestStatusStatus = typeof GuarantorRequestStatusStatus[keyof typeof GuarantorRequestStatusStatus];
+export type GuarantorRelationshipSummaryStatus = typeof GuarantorRelationshipSummaryStatus[keyof typeof GuarantorRelationshipSummaryStatus];
 
 
-export const GuarantorRequestStatusStatus = {
+export const GuarantorRelationshipSummaryStatus = {
   pending: 'pending',
   awaiting_admin_review: 'awaiting_admin_review',
   approved: 'approved',
@@ -184,43 +189,34 @@ export const GuarantorRequestStatusStatus = {
   rejected: 'rejected',
 } as const;
 
-export interface GuarantorRequestStatus {
-  guarantorUid: string;
-  guarantorName?: string;
-  status: GuarantorRequestStatusStatus;
+export interface GuarantorRelationshipSummary {
+  id: string;
+  requester_uid: string;
+  requester_name: string;
+  guarantor_uid: string;
+  guarantor_name: string;
+  status: GuarantorRelationshipSummaryStatus;
+  max_amount: number;
   /** @nullable */
-  requestedAt?: string | null;
+  requested_at?: string | null;
   /** @nullable */
-  respondedAt?: string | null;
-  maxAmount: number;
+  responded_at?: string | null;
+  /** @nullable */
+  admin_decision_reason?: string | null;
 }
 
-export type IncomingGuarantorRequestStatus = typeof IncomingGuarantorRequestStatus[keyof typeof IncomingGuarantorRequestStatus];
-
-
-export const IncomingGuarantorRequestStatus = {
-  pending: 'pending',
-  awaiting_admin_review: 'awaiting_admin_review',
-  approved: 'approved',
-  declined: 'declined',
-  rejected: 'rejected',
-} as const;
-
-export interface IncomingGuarantorRequest {
-  requesterName?: string;
-  status: IncomingGuarantorRequestStatus;
-  /** @nullable */
-  requestedAt?: string | null;
-  maxAmount: number;
+export interface GuarantorCapacity {
+  used_count: number;
+  max_count: number;
+  used_amount: number;
+  max_amount: number;
 }
 
-export type GuarantorStatusIncomingRequests = {[key: string]: IncomingGuarantorRequest};
-
-export interface GuarantorStatus {
-  outgoing_request?: GuarantorRequestStatus | null;
-  /** @nullable */
-  approved_guarantor_uid: string | null;
-  incoming_requests: GuarantorStatusIncomingRequests;
+export interface GuarantorNetwork {
+  outgoing: GuarantorRelationshipSummary[];
+  incoming: GuarantorRelationshipSummary[];
+  guarantor_capacity: GuarantorCapacity;
+  requester_capacity: GuarantorCapacity;
 }
 
 export interface GuarantorRequestInput {
@@ -235,6 +231,7 @@ export const GuarantorRequestResultStatus = {
 } as const;
 
 export interface GuarantorRequestResult {
+  id: string;
   status: GuarantorRequestResultStatus;
   guarantor_uid: string;
   guarantor_name: string;
@@ -242,7 +239,7 @@ export interface GuarantorRequestResult {
 }
 
 export interface GuarantorRespondInput {
-  requester_uid: string;
+  relationship_id: string;
   approve: boolean;
 }
 
@@ -255,8 +252,39 @@ export const GuarantorRespondResultStatus = {
 } as const;
 
 export interface GuarantorRespondResult {
+  id: string;
   requester_uid: string;
   status: GuarantorRespondResultStatus;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  /** @nullable */
+  related_id?: string | null;
+  read: boolean;
+  /** @nullable */
+  created_at?: string | null;
+}
+
+export interface NotificationsList {
+  notifications: Notification[];
+  unread_count: number;
+}
+
+export interface MarkNotificationReadInput {
+  notification_id: string;
+}
+
+export interface MarkNotificationReadResult {
+  id: string;
+  read: boolean;
+}
+
+export interface MarkAllNotificationsReadResult {
+  marked_count: number;
 }
 
 export type AdminUserReviewStatus = typeof AdminUserReviewStatus[keyof typeof AdminUserReviewStatus];
@@ -287,8 +315,7 @@ export interface AdminUser {
   debt_to_income_percentage?: number | null;
   stacking_flag: boolean;
   statement_count: number;
-  /** @nullable */
-  guarantor_uid?: string | null;
+  guarantor_count?: number;
   /** @nullable */
   updated_at?: string | null;
 }
@@ -385,8 +412,7 @@ export interface AdminUserDetail {
   review_status: AdminUserDetailReviewStatus;
   /** @nullable */
   review_reason?: string | null;
-  /** @nullable */
-  guarantor_uid?: string | null;
+  approved_guarantor_uids?: string[];
   /** @nullable */
   updated_at?: string | null;
   kyc: AdminUserKyc;
@@ -404,6 +430,7 @@ export const GuarantorRequestSummaryStatus = {
 } as const;
 
 export interface GuarantorRequestSummary {
+  id: string;
   requester_uid: string;
   requester_name: string;
   /** @nullable */
@@ -427,6 +454,8 @@ export interface GuarantorRequestSummary {
   /** @nullable */
   guarantor_debt_to_income_percentage?: number | null;
   guarantor_stacking_flag?: boolean;
+  guarantor_active_guarantees_count?: number;
+  guarantor_max_concurrent?: number;
 }
 
 export interface GuarantorRequestsList {
@@ -436,7 +465,7 @@ export interface GuarantorRequestsList {
 }
 
 export interface GuarantorInsightInput {
-  requester_uid: string;
+  relationship_id: string;
 }
 
 export type GuarantorInsightResultRiskTier = typeof GuarantorInsightResultRiskTier[keyof typeof GuarantorInsightResultRiskTier];
@@ -457,6 +486,7 @@ export const GuarantorInsightResultRecommendation = {
 } as const;
 
 export interface GuarantorInsightResult {
+  relationship_id: string;
   requester_uid: string;
   guarantor_uid: string;
   risk_tier: GuarantorInsightResultRiskTier;
@@ -474,7 +504,7 @@ export const GuarantorDecisionInputDecision = {
 } as const;
 
 export interface GuarantorDecisionInput {
-  requester_uid: string;
+  relationship_id: string;
   decision: GuarantorDecisionInputDecision;
   /** @nullable */
   reason?: string | null;
@@ -489,6 +519,7 @@ export const GuarantorDecisionResultStatus = {
 } as const;
 
 export interface GuarantorDecisionResult {
+  relationship_id: string;
   requester_uid: string;
   guarantor_uid: string;
   status: GuarantorDecisionResultStatus;

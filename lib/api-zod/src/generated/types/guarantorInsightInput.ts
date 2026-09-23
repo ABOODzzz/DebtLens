@@ -7,5 +7,5 @@
  */
 
 export interface GuarantorInsightInput {
-  requester_uid: string;
+  relationship_id: string;
 }

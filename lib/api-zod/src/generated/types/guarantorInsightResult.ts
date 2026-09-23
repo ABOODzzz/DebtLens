@@ -9,6 +9,7 @@ import type { GuarantorInsightResultRecommendation } from './guarantorInsightRes
 import type { GuarantorInsightResultRiskTier } from './guarantorInsightResultRiskTier';
 
 export interface GuarantorInsightResult {
+  relationship_id: string;
   requester_uid: string;
   guarantor_uid: string;
   risk_tier: GuarantorInsightResultRiskTier;

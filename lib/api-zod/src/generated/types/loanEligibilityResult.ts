@@ -14,10 +14,15 @@ export interface LoanEligibilityResult {
   creditScoreLabel: string;
   creditScoreColor: string;
   guarantorBacked: boolean;
+  /** @nullable */
   recommendedAmount?: number | null;
+  /** @nullable */
   interestRate?: number | null;
+  /** @nullable */
   termMonths?: number | null;
+  /** @nullable */
   monthlyInstallment?: number | null;
+  /** @nullable */
   totalRepayment?: number | null;
   recommendation: string;
   basedOnRealData: boolean;

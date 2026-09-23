@@ -163,6 +163,7 @@ export const RequestGuarantorBody = zod.object({
 })
 
 export const RequestGuarantorResponse = zod.object({
+  "id": zod.string(),
   "status": zod.enum(['pending']),
   "guarantor_uid": zod.string(),
   "guarantor_name": zod.string(),
@@ -171,40 +172,100 @@ export const RequestGuarantorResponse = zod.object({
 
 
 /**
- * Approving raises the request to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
+ * Approving raises the relationship to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
  * @summary Approve or decline an incoming guarantor request
  */
 export const RespondToGuarantorRequestBody = zod.object({
-  "requester_uid": zod.string(),
+  "relationship_id": zod.string(),
   "approve": zod.boolean()
 })
 
 export const RespondToGuarantorRequestResponse = zod.object({
+  "id": zod.string(),
   "requester_uid": zod.string(),
   "status": zod.enum(['awaiting_admin_review', 'declined'])
 })
 
 
 /**
- * Returns any outgoing guarantor request, the approved guarantor (if any), and incoming requests naming this user as guarantor.
- * @summary Get the signed-in user's digital guarantor status
+ * Returns every guarantor relationship where this user is the requester or the guarantor (a user may have several of each), plus their remaining capacity on both sides.
+ * @summary Get the signed-in user's digital guarantor network
  */
-export const GetGuarantorStatusResponse = zod.object({
-  "outgoing_request": zod.union([zod.object({
-  "guarantorUid": zod.string(),
-  "guarantorName": zod.string().optional(),
+export const GetGuarantorNetworkResponse = zod.object({
+  "outgoing": zod.array(zod.object({
+  "id": zod.string(),
+  "requester_uid": zod.string(),
+  "requester_name": zod.string(),
+  "guarantor_uid": zod.string(),
+  "guarantor_name": zod.string(),
   "status": zod.enum(['pending', 'awaiting_admin_review', 'approved', 'declined', 'rejected']),
-  "requestedAt": zod.coerce.date().nullish(),
-  "respondedAt": zod.coerce.date().nullish(),
-  "maxAmount": zod.number()
-}),zod.null()]).optional(),
-  "approved_guarantor_uid": zod.string().nullable(),
-  "incoming_requests": zod.record(zod.string(), zod.object({
-  "requesterName": zod.string().optional(),
+  "max_amount": zod.number(),
+  "requested_at": zod.coerce.date().nullish(),
+  "responded_at": zod.coerce.date().nullish(),
+  "admin_decision_reason": zod.string().nullish()
+})),
+  "incoming": zod.array(zod.object({
+  "id": zod.string(),
+  "requester_uid": zod.string(),
+  "requester_name": zod.string(),
+  "guarantor_uid": zod.string(),
+  "guarantor_name": zod.string(),
   "status": zod.enum(['pending', 'awaiting_admin_review', 'approved', 'declined', 'rejected']),
-  "requestedAt": zod.coerce.date().nullish(),
-  "maxAmount": zod.number()
-}))
+  "max_amount": zod.number(),
+  "requested_at": zod.coerce.date().nullish(),
+  "responded_at": zod.coerce.date().nullish(),
+  "admin_decision_reason": zod.string().nullish()
+})),
+  "guarantor_capacity": zod.object({
+  "used_count": zod.number().int(),
+  "max_count": zod.number().int(),
+  "used_amount": zod.number(),
+  "max_amount": zod.number()
+}),
+  "requester_capacity": zod.object({
+  "used_count": zod.number().int(),
+  "max_count": zod.number().int(),
+  "used_amount": zod.number(),
+  "max_amount": zod.number()
+})
+})
+
+
+/**
+ * @summary List the signed-in user's in-app notifications
+ */
+export const ListNotificationsResponse = zod.object({
+  "notifications": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "message": zod.string(),
+  "related_id": zod.string().nullish(),
+  "read": zod.boolean(),
+  "created_at": zod.coerce.date().nullish()
+})),
+  "unread_count": zod.number().int()
+})
+
+
+/**
+ * @summary Mark one notification as read
+ */
+export const MarkNotificationReadBody = zod.object({
+  "notification_id": zod.string()
+})
+
+export const MarkNotificationReadResponse = zod.object({
+  "id": zod.string(),
+  "read": zod.boolean()
+})
+
+
+/**
+ * @summary Mark all of the signed-in user's unread notifications as read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  "marked_count": zod.number().int()
 })
 
 
@@ -227,7 +288,7 @@ export const ListAdminUsersResponse = zod.object({
   "debt_to_income_percentage": zod.number().nullish(),
   "stacking_flag": zod.boolean(),
   "statement_count": zod.number().int(),
-  "guarantor_uid": zod.string().nullish(),
+  "guarantor_count": zod.number().int().optional(),
   "updated_at": zod.coerce.date().nullish()
 }))
 })
@@ -246,7 +307,7 @@ export const GetAdminUserDetailResponse = zod.object({
   "national_id": zod.string().nullish(),
   "review_status": zod.enum(['pending', 'approved', 'rejected', 'no_submission']),
   "review_reason": zod.string().nullish(),
-  "guarantor_uid": zod.string().nullish(),
+  "approved_guarantor_uids": zod.array(zod.string()).optional(),
   "updated_at": zod.coerce.date().nullish(),
   "kyc": zod.object({
   "typed_full_name": zod.string().nullish(),
@@ -296,6 +357,7 @@ export const ListGuarantorRequestsResponse = zod.object({
   "request_count": zod.number().int(),
   "awaiting_count": zod.number().int(),
   "requests": zod.array(zod.object({
+  "id": zod.string(),
   "requester_uid": zod.string(),
   "requester_name": zod.string(),
   "requester_national_id": zod.string().nullish(),
@@ -309,7 +371,9 @@ export const ListGuarantorRequestsResponse = zod.object({
   "requester_debt_to_income_percentage": zod.number().nullish(),
   "requester_stacking_flag": zod.boolean().optional(),
   "guarantor_debt_to_income_percentage": zod.number().nullish(),
-  "guarantor_stacking_flag": zod.boolean().optional()
+  "guarantor_stacking_flag": zod.boolean().optional(),
+  "guarantor_active_guarantees_count": zod.number().int().optional(),
+  "guarantor_max_concurrent": zod.number().int().optional()
 }))
 })
 
@@ -318,10 +382,11 @@ export const ListGuarantorRequestsResponse = zod.object({
  * @summary AI-assisted comparison of a requester and their proposed digital guarantor
  */
 export const GetGuarantorInsightBody = zod.object({
-  "requester_uid": zod.string()
+  "relationship_id": zod.string()
 })
 
 export const GetGuarantorInsightResponse = zod.object({
+  "relationship_id": zod.string(),
   "requester_uid": zod.string(),
   "guarantor_uid": zod.string(),
   "risk_tier": zod.enum(['منخفض', 'متوسط', 'مرتفع']),
@@ -335,12 +400,13 @@ export const GetGuarantorInsightResponse = zod.object({
  * @summary Final admin approve/reject decision on a digital guarantor request
  */
 export const SubmitGuarantorDecisionBody = zod.object({
-  "requester_uid": zod.string(),
+  "relationship_id": zod.string(),
   "decision": zod.enum(['approved', 'rejected']),
   "reason": zod.string().nullish()
 })
 
 export const SubmitGuarantorDecisionResponse = zod.object({
+  "relationship_id": zod.string(),
   "requester_uid": zod.string(),
   "guarantor_uid": zod.string(),
   "status": zod.enum(['approved', 'rejected'])

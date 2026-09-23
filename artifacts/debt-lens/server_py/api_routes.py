@@ -538,32 +538,39 @@ _RISK_TIERS_ARABIC = {"منخفض", "متوسط", "مرتفع"}
 _GUARANTOR_DTI_CEILING_PERCENT = 50.0
 
 
-def _guarantor_context(profile: dict) -> dict | None:
+def _guarantor_context(uid: str) -> dict | None:
     """
-    If the applicant has an approved Digital Guarantor, re-validate that
-    person still qualifies (their situation may have changed since they
-    approved) before letting the boost apply. Never trust a stale approval.
+    Aggregate every still-valid approved Digital Guarantor relationship
+    backing this applicant (there can be several -- see guarantor.py). Each
+    guarantor's current standing is re-validated here, since their situation
+    may have changed since they were approved; a stale approval never counts.
     """
-    guarantor_uid = profile.get("guarantor_uid")
-    if not guarantor_uid:
+    from guarantor import GUARANTOR_MAX_DTI_PERCENT, get_active_guarantors_for
+
+    relationships = get_active_guarantors_for(uid)
+    if not relationships:
         return None
 
-    from guarantor import GUARANTOR_BACKED_MAX_AMOUNT, GUARANTOR_MAX_DTI_PERCENT
+    valid = []
+    for rel in relationships:
+        try:
+            guarantor_profile = get_user_financial_profile(rel["guarantorUid"])
+        except FirebaseUnavailableError:
+            continue
+        if guarantor_profile["data_source"] != "verified":
+            continue
+        dti = guarantor_profile["debt_to_income_percentage"]
+        if guarantor_profile["stacking_flag"] or (dti is not None and dti >= GUARANTOR_MAX_DTI_PERCENT):
+            continue
+        valid.append({"dti": dti or 0.0, "amount": rel.get("maxAmount") or 0.0})
 
-    try:
-        guarantor_profile = get_user_financial_profile(guarantor_uid)
-    except FirebaseUnavailableError:
-        return None
-
-    if guarantor_profile["data_source"] != "verified":
-        return None
-    dti = guarantor_profile["debt_to_income_percentage"]
-    if guarantor_profile["stacking_flag"] or (dti is not None and dti >= GUARANTOR_MAX_DTI_PERCENT):
+    if not valid:
         return None
 
     return {
-        "guarantor_dti_percentage": dti or 0.0,
-        "max_backed_amount": GUARANTOR_BACKED_MAX_AMOUNT,
+        "guarantor_count": len(valid),
+        "guarantor_dti_percentage": min(v["dti"] for v in valid),
+        "max_backed_amount": sum(v["amount"] for v in valid),
     }
 
 
@@ -677,9 +684,11 @@ def _generate_loan_assessment_via_claude(
     )
 
     if guarantor_context:
+        guarantor_count = guarantor_context["guarantor_count"]
+        guarantors_word = "كفيل رقمي واحد موافق ومُوثّق" if guarantor_count == 1 else f"{guarantor_count} كفلاء رقميين موافَق عليهم وموثّقين"
         guarantor_line = (
-            f"لدى العميل كفيل رقمي موافق ومُوثّق عند DebtLens بنفسه (نسبة الدين إلى الدخل الخاصة بالكفيل: "
-            f"{guarantor_context['guarantor_dti_percentage']}%). الكفيل يتحمل مسؤولية سداد القسط حتى سقف "
+            f"لدى العميل {guarantors_word} عند DebtLens (أفضل نسبة دين إلى دخل بين الكفلاء: "
+            f"{guarantor_context['guarantor_dti_percentage']}%). يتحمل الكفلاء مجتمعين مسؤولية سداد القسط حتى سقف "
             f"{guarantor_context['max_backed_amount']} دينار إذا تعثر العميل. لهذا السبب يمكنك تخفيف نسبة الفائدة "
             "قليلاً مقارنة بعميل بدون كفيل، ضمن الحد الآمن لنسبة الدين إلى الدخل المذكور أدناه."
         )
@@ -801,7 +810,7 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
     _require_anthropic()
 
     assessment_data = _loan_assessment_data(profile)
-    guarantor_context = _guarantor_context(profile)
+    guarantor_context = _guarantor_context(user["uid"])
 
     try:
         verdict = _generate_loan_assessment_via_claude(

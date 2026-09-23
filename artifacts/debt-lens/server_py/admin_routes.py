@@ -676,6 +676,8 @@ def _customer_identity(user_doc: dict) -> tuple[str, str | None]:
 # ---------------------------------------------------------------------------
 @router.get("/users")
 def list_users(admin: dict = Depends(get_current_admin)):
+    from guarantor import get_active_guarantors_for
+
     db = _get_db()
 
     users = []
@@ -692,6 +694,7 @@ def list_users(admin: dict = Depends(get_current_admin)):
 
         updated_at = user_doc.get("updatedAt")
         updated_at_iso = updated_at.isoformat() if hasattr(updated_at, "isoformat") else None
+        approved_guarantors = get_active_guarantors_for(uid)
 
         users.append(
             {
@@ -707,7 +710,7 @@ def list_users(admin: dict = Depends(get_current_admin)):
                 "debt_to_income_percentage": profile["debt_to_income_percentage"] if profile else None,
                 "stacking_flag": profile["stacking_flag"] if profile else False,
                 "statement_count": profile["statement_count"] if profile else 0,
-                "guarantor_uid": user_doc.get("guarantorUid"),
+                "guarantor_count": len(approved_guarantors),
                 "updated_at": updated_at_iso,
             }
         )
@@ -728,10 +731,13 @@ def list_users(admin: dict = Depends(get_current_admin)):
 # ---------------------------------------------------------------------------
 @router.get("/users/{uid}")
 def get_user_detail(uid: str, admin: dict = Depends(get_current_admin)):
+    from guarantor import get_active_guarantors_for
+
     db = _get_db()
     user_doc = _get_user_doc(db, uid)
     kyc = user_doc.get("kycVerification") or {}
     name, national_id = _customer_identity(user_doc)
+    approved_guarantors = get_active_guarantors_for(uid)
 
     try:
         profile = get_user_financial_profile(uid)
@@ -765,7 +771,7 @@ def get_user_detail(uid: str, admin: dict = Depends(get_current_admin)):
         "national_id": national_id,
         "review_status": user_doc.get("reviewStatus") or "no_submission",
         "review_reason": user_doc.get("reviewReason"),
-        "guarantor_uid": user_doc.get("guarantorUid"),
+        "approved_guarantor_uids": [g["guarantorUid"] for g in approved_guarantors],
         "updated_at": updated_at_iso,
         "kyc": {
             "typed_full_name": kyc.get("typedFullName"),
@@ -1126,27 +1132,29 @@ def _iso(value) -> str | None:
 
 @router.get("/guarantor-requests")
 def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
+    from guarantor import GUARANTOR_MAX_CONCURRENT, GUARANTOR_MAX_TOTAL_EXPOSURE, _capacity
+
     db = _get_db()
 
     requests_out = []
-    for snapshot in db.collection("users").stream():
-        doc = snapshot.to_dict() or {}
-        request = doc.get("guarantorRequest")
-        if not request or request.get("status") not in ("awaiting_admin_review", "approved", "rejected"):
-            continue
+    relationship_docs = [
+        snap
+        for snap in db.collection("guarantorRelationships").stream()
+        if (snap.to_dict() or {}).get("status") in ("awaiting_admin_review", "approved", "rejected")
+    ]
 
-        requester_uid = snapshot.id
-        guarantor_uid = request.get("guarantorUid")
-        requester_name, requester_national_id = _customer_identity(doc)
+    for snapshot in relationship_docs:
+        rel = snapshot.to_dict() or {}
+        requester_uid = rel.get("requesterUid")
+        guarantor_uid = rel.get("guarantorUid")
 
-        guarantor_doc: dict = {}
-        if guarantor_uid:
-            guarantor_snapshot = db.collection("users").document(guarantor_uid).get()
-            guarantor_doc = guarantor_snapshot.to_dict() or {} if guarantor_snapshot.exists else {}
+        requester_doc = _get_user_doc(db, requester_uid) if requester_uid else {}
+        guarantor_doc = _get_user_doc(db, guarantor_uid) if guarantor_uid else {}
+        requester_name, requester_national_id = _customer_identity(requester_doc)
         guarantor_name, guarantor_national_id = _customer_identity(guarantor_doc)
 
         try:
-            requester_profile = get_user_financial_profile(requester_uid)
+            requester_profile = get_user_financial_profile(requester_uid) if requester_uid else None
         except FirebaseUnavailableError:
             requester_profile = None
         try:
@@ -1154,18 +1162,25 @@ def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
         except FirebaseUnavailableError:
             guarantor_profile = None
 
+        guarantor_capacity = (
+            _capacity(db, "guarantorUid", guarantor_uid, GUARANTOR_MAX_CONCURRENT, GUARANTOR_MAX_TOTAL_EXPOSURE)
+            if guarantor_uid
+            else None
+        )
+
         requests_out.append(
             {
+                "id": snapshot.id,
                 "requester_uid": requester_uid,
                 "requester_name": requester_name,
                 "requester_national_id": requester_national_id,
                 "guarantor_uid": guarantor_uid,
                 "guarantor_name": guarantor_name,
                 "guarantor_national_id": guarantor_national_id,
-                "status": request.get("status"),
-                "max_amount": request.get("maxAmount"),
-                "requested_at": _iso(request.get("requestedAt")),
-                "responded_at": _iso(request.get("respondedAt")),
+                "status": rel.get("status"),
+                "max_amount": rel.get("maxAmount"),
+                "requested_at": _iso(rel.get("requestedAt")),
+                "responded_at": _iso(rel.get("respondedAt")),
                 "requester_debt_to_income_percentage": requester_profile["debt_to_income_percentage"]
                 if requester_profile
                 else None,
@@ -1174,11 +1189,13 @@ def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
                 if guarantor_profile
                 else None,
                 "guarantor_stacking_flag": guarantor_profile["stacking_flag"] if guarantor_profile else False,
+                "guarantor_active_guarantees_count": guarantor_capacity["used_count"] if guarantor_capacity else 0,
+                "guarantor_max_concurrent": guarantor_capacity["max_count"] if guarantor_capacity else GUARANTOR_MAX_CONCURRENT,
             }
         )
 
     priority = {"awaiting_admin_review": 0, "approved": 1, "rejected": 2}
-    requests_out.sort(key=lambda r: priority.get(r["status"], 1))
+    requests_out.sort(key=lambda r: (priority.get(r["status"], 1), r["requested_at"] or ""))
 
     return {
         "request_count": len(requests_out),
@@ -1188,7 +1205,7 @@ def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
 
 
 class GuarantorInsightBody(BaseModel):
-    requester_uid: str
+    relationship_id: str
 
 
 _GUARANTOR_INSIGHT_RECOMMENDATIONS = {"approve", "reject"}
@@ -1213,26 +1230,30 @@ def _parse_guarantor_insight_json(text: str) -> dict:
     return data
 
 
+def _get_relationship(db, relationship_id: str) -> dict:
+    ref = db.collection("guarantorRelationships").document(relationship_id)
+    snapshot = ref.get()
+    if not snapshot.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guarantor relationship not found.")
+    return {**(snapshot.to_dict() or {}), "id": snapshot.id}
+
+
 @router.post("/guarantor-insight")
 def guarantor_insight(body: GuarantorInsightBody, admin: dict = Depends(get_current_admin)):
     _require_anthropic()
     db = _get_db()
 
-    requester_doc = _get_user_doc(db, body.requester_uid)
-    request = requester_doc.get("guarantorRequest") or {}
-    guarantor_uid = request.get("guarantorUid")
-    if not guarantor_uid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No guarantor request found for this user.",
-        )
+    rel = _get_relationship(db, body.relationship_id)
+    requester_uid = rel.get("requesterUid")
+    guarantor_uid = rel.get("guarantorUid")
+    requester_doc = _get_user_doc(db, requester_uid)
     guarantor_doc = _get_user_doc(db, guarantor_uid)
 
     requester_name, _ = _customer_identity(requester_doc)
     guarantor_name, _ = _customer_identity(guarantor_doc)
 
     try:
-        requester_profile = get_user_financial_profile(body.requester_uid)
+        requester_profile = get_user_financial_profile(requester_uid)
         guarantor_profile = get_user_financial_profile(guarantor_uid)
     except FirebaseUnavailableError as exc:
         raise HTTPException(
@@ -1240,7 +1261,7 @@ def guarantor_insight(body: GuarantorInsightBody, admin: dict = Depends(get_curr
             detail="Unable to reach the database right now. Please try again shortly.",
         ) from exc
 
-    max_amount = request.get("maxAmount")
+    max_amount = rel.get("maxAmount")
 
     prompt = f"""أنت محلل مخاطر داخلي في مؤسسة تمويل. عميل يطلب تمويلاً ولديه "كفيل رقمي" -- شخص آخر مُوثّق \
 على المنصة يوافق على دعم طلبه حتى مبلغ {max_amount} دينار. قيّم مدى ملاءمة هذه الكفالة.
@@ -1269,14 +1290,15 @@ def guarantor_insight(body: GuarantorInsightBody, admin: dict = Depends(get_curr
         text = _extract_response_text(message)
         insight = _parse_guarantor_insight_json(text)
     except Exception as exc:  # noqa: BLE001
-        logger.error("Guarantor insight generation failed for requester_uid=%s: %s", body.requester_uid, exc)
+        logger.error("Guarantor insight generation failed for relationship_id=%s: %s", body.relationship_id, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to generate a guarantor insight right now. Please try again shortly.",
         ) from exc
 
     return {
-        "requester_uid": body.requester_uid,
+        "relationship_id": body.relationship_id,
+        "requester_uid": requester_uid,
         "guarantor_uid": guarantor_uid,
         "risk_tier": insight["risk_tier"],
         "concerns": insight["concerns"],
@@ -1286,41 +1308,63 @@ def guarantor_insight(body: GuarantorInsightBody, admin: dict = Depends(get_curr
 
 
 class GuarantorDecisionBody(BaseModel):
-    requester_uid: str
+    relationship_id: str
     decision: Literal["approved", "rejected"]
     reason: str | None = None
 
 
 @router.post("/guarantor-decision")
 def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_current_admin)):
-    db = _get_db()
-    requester_ref = db.collection("users").document(body.requester_uid)
-    requester_doc = _get_user_doc(db, body.requester_uid)
+    from notifications import notify
 
-    request = requester_doc.get("guarantorRequest") or {}
-    guarantor_uid = request.get("guarantorUid")
-    if not guarantor_uid or request.get("status") != "awaiting_admin_review":
+    db = _get_db()
+    relationship_ref = db.collection("guarantorRelationships").document(body.relationship_id)
+    rel = _get_relationship(db, body.relationship_id)
+
+    if rel.get("status") != "awaiting_admin_review":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No guarantor request awaiting admin review for this user.",
+            detail="This guarantor relationship isn't awaiting admin review.",
         )
+
+    requester_uid = rel["requesterUid"]
+    guarantor_uid = rel["guarantorUid"]
 
     from firebase_admin import firestore
 
-    update = {
-        "guarantorRequest.status": body.decision,
-        "guarantorRequest.adminDecisionAt": firestore.SERVER_TIMESTAMP,
-        "guarantorRequest.adminDecisionReason": body.reason,
-    }
-    if body.decision == "approved":
-        update["guarantorUid"] = guarantor_uid
-    requester_ref.update(update)
-
-    db.collection("users").document(guarantor_uid).update(
-        {f"incomingGuarantorRequests.{body.requester_uid}.status": body.decision}
+    relationship_ref.update(
+        {
+            "status": body.decision,
+            "adminDecisionAt": firestore.SERVER_TIMESTAMP,
+            "adminDecisionReason": body.reason,
+        }
     )
 
-    return {"requester_uid": body.requester_uid, "guarantor_uid": guarantor_uid, "status": body.decision}
+    if body.decision == "approved":
+        title, message = "تمت الموافقة على الكفالة", (
+            f"وافقت الإدارة نهائياً على كفالة {rel.get('guarantorName') or 'الكفيل'} "
+            f"لطلب {rel.get('requesterName') or 'العميل'}."
+        )
+    else:
+        reason_line = f" السبب: {body.reason}" if body.reason else ""
+        title, message = "رُفضت الكفالة", f"رفضت الإدارة طلب الكفالة.{reason_line}"
+
+    for uid in (requester_uid, guarantor_uid):
+        notify(
+            db,
+            uid=uid,
+            notif_type=f"guarantor_admin_{body.decision}",
+            title=title,
+            message=message,
+            related_id=body.relationship_id,
+        )
+
+    return {
+        "relationship_id": body.relationship_id,
+        "requester_uid": requester_uid,
+        "guarantor_uid": guarantor_uid,
+        "status": body.decision,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@
 import type { GuarantorRespondResultStatus } from './guarantorRespondResultStatus';
 
 export interface GuarantorRespondResult {
+  id: string;
   requester_uid: string;
   status: GuarantorRespondResultStatus;
 }

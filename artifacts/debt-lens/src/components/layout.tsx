@@ -5,6 +5,7 @@ import { LogOut, User, ShieldCheck } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { buttonVariants, Button } from './ui/button';
+import { NotificationBell } from './notification-bell';
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, isAdmin } = useAuth();
@@ -42,6 +43,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     <User className="w-4 h-4" /> لوحة التحكم
                   </Link>
                 )}
+                {!isAdmin && <NotificationBell />}
                 <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground hover:text-destructive gap-2">
                   <LogOut className="w-4 h-4" />
                   تسجيل الخروج

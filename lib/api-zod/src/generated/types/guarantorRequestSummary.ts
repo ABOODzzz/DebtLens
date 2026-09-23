@@ -8,6 +8,7 @@
 import type { GuarantorRequestSummaryStatus } from './guarantorRequestSummaryStatus';
 
 export interface GuarantorRequestSummary {
+  id: string;
   requester_uid: string;
   requester_name: string;
   /** @nullable */
@@ -31,4 +32,6 @@ export interface GuarantorRequestSummary {
   /** @nullable */
   guarantor_debt_to_income_percentage?: number | null;
   guarantor_stacking_flag?: boolean;
+  guarantor_active_guarantees_count?: number;
+  guarantor_max_concurrent?: number;
 }

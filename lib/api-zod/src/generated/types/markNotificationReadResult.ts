@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface GuarantorRespondInput {
-  relationship_id: string;
-  approve: boolean;
+export interface MarkNotificationReadResult {
+  id: string;
+  read: boolean;
 }

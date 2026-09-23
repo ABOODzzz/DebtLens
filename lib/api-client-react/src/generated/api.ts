@@ -32,12 +32,12 @@ import type {
   GuarantorDecisionResult,
   GuarantorInsightInput,
   GuarantorInsightResult,
+  GuarantorNetwork,
   GuarantorRequestInput,
   GuarantorRequestResult,
   GuarantorRequestsList,
   GuarantorRespondInput,
   GuarantorRespondResult,
-  GuarantorStatus,
   Headline,
   HealthStatus,
   KycDecisionInput,
@@ -45,6 +45,10 @@ import type {
   KycSubmitInput,
   KycSubmitResponse,
   LoanEligibilityResult,
+  MarkAllNotificationsReadResult,
+  MarkNotificationReadInput,
+  MarkNotificationReadResult,
+  NotificationsList,
   RestructureResult
 } from './api.schemas';
 
@@ -878,7 +882,7 @@ export const getRespondToGuarantorRequestUrl = () => {
 }
 
 /**
- * Approving raises the request to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
+ * Approving raises the relationship to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
  * @summary Approve or decline an incoming guarantor request
  */
 export const respondToGuarantorRequest = async (guarantorRespondInput: GuarantorRespondInput, options?: Parameters<typeof customFetch>[1]): Promise<GuarantorRespondResult> => {
@@ -958,21 +962,21 @@ export const useRespondToGuarantorRequest = <TError = ErrorType<ErrorResponse>,
       return useMutation(getRespondToGuarantorRequestMutationOptions(options));
     }
 
-export const getGetGuarantorStatusUrl = () => {
+export const getGetGuarantorNetworkUrl = () => {
 
 
 
 
-  return `/api/guarantor/status`
+  return `/api/guarantor/network`
 }
 
 /**
- * Returns any outgoing guarantor request, the approved guarantor (if any), and incoming requests naming this user as guarantor.
- * @summary Get the signed-in user's digital guarantor status
+ * Returns every guarantor relationship where this user is the requester or the guarantor (a user may have several of each), plus their remaining capacity on both sides.
+ * @summary Get the signed-in user's digital guarantor network
  */
-export const getGuarantorStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<GuarantorStatus> => {
+export const getGuarantorNetwork = async ( options?: Parameters<typeof customFetch>[1]): Promise<GuarantorNetwork> => {
 
-  return customFetch<GuarantorStatus>(getGetGuarantorStatusUrl(),
+  return customFetch<GuarantorNetwork>(getGetGuarantorNetworkUrl(),
   {
     ...options,
     method: 'GET'
@@ -985,45 +989,45 @@ export const getGuarantorStatus = async ( options?: Parameters<typeof customFetc
 
 
 
-export const getGetGuarantorStatusQueryKey = () => {
+export const getGetGuarantorNetworkQueryKey = () => {
     return [
-    `/api/guarantor/status`
+    `/api/guarantor/network`
     ] as const;
     }
 
 
-export const getGetGuarantorStatusQueryOptions = <TData = Awaited<ReturnType<typeof getGuarantorStatus>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGuarantorStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetGuarantorNetworkQueryOptions = <TData = Awaited<ReturnType<typeof getGuarantorNetwork>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGuarantorNetwork>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetGuarantorStatusQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetGuarantorNetworkQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGuarantorStatus>>> = ({ signal }) => getGuarantorStatus({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGuarantorNetwork>>> = ({ signal }) => getGuarantorNetwork({ signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGuarantorStatus>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGuarantorNetwork>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetGuarantorStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getGuarantorStatus>>>
-export type GetGuarantorStatusQueryError = ErrorType<ErrorResponse>
+export type GetGuarantorNetworkQueryResult = NonNullable<Awaited<ReturnType<typeof getGuarantorNetwork>>>
+export type GetGuarantorNetworkQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary Get the signed-in user's digital guarantor status
+ * @summary Get the signed-in user's digital guarantor network
  */
 
-export function useGetGuarantorStatus<TData = Awaited<ReturnType<typeof getGuarantorStatus>>, TError = ErrorType<ErrorResponse>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGuarantorStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useGetGuarantorNetwork<TData = Awaited<ReturnType<typeof getGuarantorNetwork>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGuarantorNetwork>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetGuarantorStatusQueryOptions(options)
+  const queryOptions = getGetGuarantorNetworkQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1035,6 +1039,245 @@ export function useGetGuarantorStatus<TData = Awaited<ReturnType<typeof getGuara
 
 
 
+
+export const getListNotificationsUrl = () => {
+
+
+
+
+  return `/api/notifications`
+}
+
+/**
+ * @summary List the signed-in user's in-app notifications
+ */
+export const listNotifications = async ( options?: Parameters<typeof customFetch>[1]): Promise<NotificationsList> => {
+
+  return customFetch<NotificationsList>(getListNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNotificationsQueryKey = () => {
+    return [
+    `/api/notifications`
+    ] as const;
+    }
+
+
+export const getListNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof listNotifications>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNotificationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotifications>>> = ({ signal }) => listNotifications({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof listNotifications>>>
+export type ListNotificationsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List the signed-in user's in-app notifications
+ */
+
+export function useListNotifications<TData = Awaited<ReturnType<typeof listNotifications>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNotificationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getMarkNotificationReadUrl = () => {
+
+
+
+
+  return `/api/notifications/mark-read`
+}
+
+/**
+ * @summary Mark one notification as read
+ */
+export const markNotificationRead = async (markNotificationReadInput: MarkNotificationReadInput, options?: Parameters<typeof customFetch>[1]): Promise<MarkNotificationReadResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MarkNotificationReadResult>(getMarkNotificationReadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(markNotificationReadInput)
+  }
+);}
+
+
+
+
+
+export const getMarkNotificationReadMutationKey = () => ['markNotificationRead'] as const;
+
+export const getMarkNotificationReadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,MarkNotificationReadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,MarkNotificationReadMutationVariables, TContext> => {
+
+const mutationKey = getMarkNotificationReadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markNotificationRead>>, MarkNotificationReadMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  markNotificationRead(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkNotificationReadMutationResult = NonNullable<Awaited<ReturnType<typeof markNotificationRead>>>
+    export type MarkNotificationReadMutationBody = BodyType<MarkNotificationReadInput>
+    export type MarkNotificationReadMutationError = ErrorType<ErrorResponse>
+    export type MarkNotificationReadMutationVariables = {data: BodyType<MarkNotificationReadInput>}
+
+    /**
+ * @summary Mark one notification as read
+ */
+export const useMarkNotificationRead = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,MarkNotificationReadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markNotificationRead>>,
+        TError,
+        MarkNotificationReadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMarkNotificationReadMutationOptions(options));
+    }
+
+export const getMarkAllNotificationsReadUrl = () => {
+
+
+
+
+  return `/api/notifications/mark-all-read`
+}
+
+/**
+ * @summary Mark all of the signed-in user's unread notifications as read
+ */
+export const markAllNotificationsRead = async ( options?: Parameters<typeof customFetch>[1]): Promise<MarkAllNotificationsReadResult> => {
+
+  return customFetch<MarkAllNotificationsReadResult>(getMarkAllNotificationsReadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkAllNotificationsReadMutationKey = () => ['markAllNotificationsRead'] as const;
+
+export const getMarkAllNotificationsReadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext> => {
+
+const mutationKey = getMarkAllNotificationsReadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markAllNotificationsRead>>, void> = () => {
+
+
+          return  markAllNotificationsRead(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkAllNotificationsReadMutationResult = NonNullable<Awaited<ReturnType<typeof markAllNotificationsRead>>>
+
+    export type MarkAllNotificationsReadMutationError = ErrorType<ErrorResponse>
+
+
+    /**
+ * @summary Mark all of the signed-in user's unread notifications as read
+ */
+export const useMarkAllNotificationsRead = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markAllNotificationsRead>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getMarkAllNotificationsReadMutationOptions(options));
+    }
 
 export const getListAdminUsersUrl = () => {
 

@@ -20,6 +20,7 @@ from firebase_client import ADMIN_UID, FIREBASE_ENABLED, get_current_admin, get_
 from admin_routes import router as admin_router
 from guarantor import router as guarantor_router
 from kyc import router as kyc_router
+from notifications import router as notifications_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("debtlens")
@@ -45,6 +46,7 @@ app.include_router(api_router)
 app.include_router(kyc_router)
 app.include_router(admin_router)
 app.include_router(guarantor_router)
+app.include_router(notifications_router)
 
 # ---------------------------------------------------------------------------
 # Firebase Web (client-side) config -- these are public app identifiers, not

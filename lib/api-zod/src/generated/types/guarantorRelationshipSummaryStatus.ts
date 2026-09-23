@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type IncomingGuarantorRequestStatus = typeof IncomingGuarantorRequestStatus[keyof typeof IncomingGuarantorRequestStatus];
+export type GuarantorRelationshipSummaryStatus = typeof GuarantorRelationshipSummaryStatus[keyof typeof GuarantorRelationshipSummaryStatus];
 
 
-export const IncomingGuarantorRequestStatus = {
+export const GuarantorRelationshipSummaryStatus = {
   pending: 'pending',
   awaiting_admin_review: 'awaiting_admin_review',
   approved: 'approved',

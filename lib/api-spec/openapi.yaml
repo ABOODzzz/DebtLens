@@ -323,7 +323,7 @@ paths:
       operationId: respondToGuarantorRequest
       tags: [guarantor]
       summary: Approve or decline an incoming guarantor request
-      description: Approving raises the request to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
+      description: Approving raises the relationship to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
       security:
         - bearerAuth: []
       requestBody:
@@ -346,7 +346,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: No pending request from that user naming you as guarantor
+          description: No pending relationship with this id naming you as guarantor
           content:
             application/json:
               schema:
@@ -357,21 +357,79 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /guarantor/status:
+  /guarantor/network:
     get:
-      operationId: getGuarantorStatus
+      operationId: getGuarantorNetwork
       tags: [guarantor]
-      summary: Get the signed-in user's digital guarantor status
-      description: Returns any outgoing guarantor request, the approved guarantor (if any), and incoming requests naming this user as guarantor.
+      summary: Get the signed-in user's digital guarantor network
+      description: Returns every guarantor relationship where this user is the requester or the guarantor (a user may have several of each), plus their remaining capacity on both sides.
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Guarantor status
+          description: Guarantor network
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GuarantorStatus"
+                $ref: "#/components/schemas/GuarantorNetwork"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [guarantor]
+      summary: List the signed-in user's in-app notifications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsList"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /notifications/mark-read:
+    post:
+      operationId: markNotificationRead
+      tags: [guarantor]
+      summary: Mark one notification as read
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkNotificationReadInput"
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkNotificationReadResult"
         "401":
           description: Missing or invalid Firebase token
           content:
@@ -379,13 +437,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: User profile not found
+          description: Notification not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Database unavailable
+  /notifications/mark-all-read:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [guarantor]
+      summary: Mark all of the signed-in user's unread notifications as read
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkAllNotificationsReadResult"
+        "401":
+          description: Missing or invalid Firebase token
           content:
             application/json:
               schema:
@@ -904,60 +976,76 @@ components:
           type: boolean
         currentDebtToIncomePercentage:
           type: number
-    GuarantorRequestStatus:
+    GuarantorRelationshipSummary:
       type: object
       required:
-        - guarantorUid
+        - id
+        - requester_uid
+        - requester_name
+        - guarantor_uid
+        - guarantor_name
         - status
-        - maxAmount
+        - max_amount
       properties:
-        guarantorUid:
+        id:
           type: string
-        guarantorName:
+        requester_uid:
+          type: string
+        requester_name:
+          type: string
+        guarantor_uid:
+          type: string
+        guarantor_name:
           type: string
         status:
           type: string
           enum: [pending, awaiting_admin_review, approved, declined, rejected]
-        requestedAt:
-          type: ["string", "null"]
-          format: date-time
-        respondedAt:
-          type: ["string", "null"]
-          format: date-time
-        maxAmount:
+        max_amount:
           type: number
-    IncomingGuarantorRequest:
+        requested_at:
+          type: ["string", "null"]
+          format: date-time
+        responded_at:
+          type: ["string", "null"]
+          format: date-time
+        admin_decision_reason:
+          type: ["string", "null"]
+    GuarantorCapacity:
       type: object
       required:
-        - status
-        - maxAmount
+        - used_count
+        - max_count
+        - used_amount
+        - max_amount
       properties:
-        requesterName:
-          type: string
-        status:
-          type: string
-          enum: [pending, awaiting_admin_review, approved, declined, rejected]
-        requestedAt:
-          type: ["string", "null"]
-          format: date-time
-        maxAmount:
+        used_count:
+          type: integer
+        max_count:
+          type: integer
+        used_amount:
           type: number
-    GuarantorStatus:
+        max_amount:
+          type: number
+    GuarantorNetwork:
       type: object
       required:
-        - approved_guarantor_uid
-        - incoming_requests
+        - outgoing
+        - incoming
+        - guarantor_capacity
+        - requester_capacity
       properties:
-        outgoing_request:
-          anyOf:
-            - $ref: "#/components/schemas/GuarantorRequestStatus"
-            - type: "null"
-        approved_guarantor_uid:
-          type: ["string", "null"]
-        incoming_requests:
-          type: object
-          additionalProperties:
-            $ref: "#/components/schemas/IncomingGuarantorRequest"
+        outgoing:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuarantorRelationshipSummary"
+        incoming:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuarantorRelationshipSummary"
+        guarantor_capacity:
+          $ref: "#/components/schemas/GuarantorCapacity"
+        requester_capacity:
+          $ref: "#/components/schemas/GuarantorCapacity"
     GuarantorRequestInput:
       type: object
       required:
@@ -968,11 +1056,14 @@ components:
     GuarantorRequestResult:
       type: object
       required:
+        - id
         - status
         - guarantor_uid
         - guarantor_name
         - max_amount
       properties:
+        id:
+          type: string
         status:
           type: string
           enum: [pending]
@@ -985,24 +1076,87 @@ components:
     GuarantorRespondInput:
       type: object
       required:
-        - requester_uid
+        - relationship_id
         - approve
       properties:
-        requester_uid:
+        relationship_id:
           type: string
         approve:
           type: boolean
     GuarantorRespondResult:
       type: object
       required:
+        - id
         - requester_uid
         - status
       properties:
+        id:
+          type: string
         requester_uid:
           type: string
         status:
           type: string
           enum: [awaiting_admin_review, declined]
+    Notification:
+      type: object
+      required:
+        - id
+        - type
+        - title
+        - message
+        - read
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        related_id:
+          type: ["string", "null"]
+        read:
+          type: boolean
+        created_at:
+          type: ["string", "null"]
+          format: date-time
+    NotificationsList:
+      type: object
+      required:
+        - notifications
+        - unread_count
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unread_count:
+          type: integer
+    MarkNotificationReadInput:
+      type: object
+      required:
+        - notification_id
+      properties:
+        notification_id:
+          type: string
+    MarkNotificationReadResult:
+      type: object
+      required:
+        - id
+        - read
+      properties:
+        id:
+          type: string
+        read:
+          type: boolean
+    MarkAllNotificationsReadResult:
+      type: object
+      required:
+        - marked_count
+      properties:
+        marked_count:
+          type: integer
     AdminUser:
       type: object
       required:
@@ -1039,8 +1193,8 @@ components:
           type: boolean
         statement_count:
           type: integer
-        guarantor_uid:
-          type: ["string", "null"]
+        guarantor_count:
+          type: integer
         updated_at:
           type: ["string", "null"]
           format: date-time
@@ -1164,8 +1318,10 @@ components:
           enum: [pending, approved, rejected, no_submission]
         review_reason:
           type: ["string", "null"]
-        guarantor_uid:
-          type: ["string", "null"]
+        approved_guarantor_uids:
+          type: array
+          items:
+            type: string
         updated_at:
           type: ["string", "null"]
           format: date-time
@@ -1180,10 +1336,13 @@ components:
     GuarantorRequestSummary:
       type: object
       required:
+        - id
         - requester_uid
         - requester_name
         - status
       properties:
+        id:
+          type: string
         requester_uid:
           type: string
         requester_name:
@@ -1215,6 +1374,10 @@ components:
           type: ["number", "null"]
         guarantor_stacking_flag:
           type: boolean
+        guarantor_active_guarantees_count:
+          type: integer
+        guarantor_max_concurrent:
+          type: integer
     GuarantorRequestsList:
       type: object
       required:
@@ -1233,13 +1396,14 @@ components:
     GuarantorInsightInput:
       type: object
       required:
-        - requester_uid
+        - relationship_id
       properties:
-        requester_uid:
+        relationship_id:
           type: string
     GuarantorInsightResult:
       type: object
       required:
+        - relationship_id
         - requester_uid
         - guarantor_uid
         - risk_tier
@@ -1247,6 +1411,8 @@ components:
         - recommendation
         - notes
       properties:
+        relationship_id:
+          type: string
         requester_uid:
           type: string
         guarantor_uid:
@@ -1266,10 +1432,10 @@ components:
     GuarantorDecisionInput:
       type: object
       required:
-        - requester_uid
+        - relationship_id
         - decision
       properties:
-        requester_uid:
+        relationship_id:
           type: string
         decision:
           type: string
@@ -1279,10 +1445,13 @@ components:
     GuarantorDecisionResult:
       type: object
       required:
+        - relationship_id
         - requester_uid
         - guarantor_uid
         - status
       properties:
+        relationship_id:
+          type: string
         requester_uid:
           type: string
         guarantor_uid:

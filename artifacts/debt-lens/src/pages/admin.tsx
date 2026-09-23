@@ -377,33 +377,33 @@ function GuarantorRequestsTab() {
   const requestsQuery = useListGuarantorRequests();
   const insightMutation = useGetGuarantorInsight();
   const decisionMutation = useSubmitGuarantorDecision();
-  const [insightByRequester, setInsightByRequester] = useState<Record<string, any>>({});
-  const [activeRequester, setActiveRequester] = useState<string | null>(null);
+  const [insightByRelationship, setInsightByRelationship] = useState<Record<string, any>>({});
+  const [activeRelationship, setActiveRelationship] = useState<string | null>(null);
   const { toast } = useToast();
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListGuarantorRequestsQueryKey() });
 
-  const handleGetInsight = async (requesterUid: string) => {
-    setActiveRequester(requesterUid);
+  const handleGetInsight = async (relationshipId: string) => {
+    setActiveRelationship(relationshipId);
     try {
-      const result = await insightMutation.mutateAsync({ data: { requester_uid: requesterUid } });
-      setInsightByRequester((prev) => ({ ...prev, [requesterUid]: result }));
+      const result = await insightMutation.mutateAsync({ data: { relationship_id: relationshipId } });
+      setInsightByRelationship((prev) => ({ ...prev, [relationshipId]: result }));
     } catch (error) {
       toast({ variant: "destructive", title: "تعذر توليد التحليل", description: "يرجى المحاولة مرة أخرى." });
     } finally {
-      setActiveRequester(null);
+      setActiveRelationship(null);
     }
   };
 
-  const handleDecision = async (requesterUid: string, decision: "approved" | "rejected") => {
-    setActiveRequester(requesterUid);
+  const handleDecision = async (relationshipId: string, decision: "approved" | "rejected") => {
+    setActiveRelationship(relationshipId);
     try {
-      await decisionMutation.mutateAsync({ data: { requester_uid: requesterUid, decision } });
+      await decisionMutation.mutateAsync({ data: { relationship_id: relationshipId, decision } });
       invalidate();
     } catch (error) {
       toast({ variant: "destructive", title: "تعذر حفظ القرار", description: "يرجى المحاولة مرة أخرى." });
     } finally {
-      setActiveRequester(null);
+      setActiveRelationship(null);
     }
   };
 
@@ -432,10 +432,10 @@ function GuarantorRequestsTab() {
 
       <div className="grid grid-cols-1 gap-4">
         {requests.map((req) => {
-          const insight = insightByRequester[req.requester_uid];
-          const busy = activeRequester === req.requester_uid && (insightMutation.isPending || decisionMutation.isPending);
+          const insight = insightByRelationship[req.id];
+          const busy = activeRelationship === req.id && (insightMutation.isPending || decisionMutation.isPending);
           return (
-            <Card key={req.requester_uid}>
+            <Card key={req.id}>
               <CardContent className="p-4 space-y-4">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
@@ -459,6 +459,9 @@ function GuarantorRequestsTab() {
                     <p className="text-xs text-muted-foreground mb-1">الكفيل: {req.guarantor_name}</p>
                     <p>نسبة عبء الدين: {req.guarantor_debt_to_income_percentage != null ? `${Math.round(req.guarantor_debt_to_income_percentage)}%` : "-"}</p>
                     {req.guarantor_stacking_flag && <p className="text-destructive font-medium">تكديس ديون</p>}
+                    {req.guarantor_active_guarantees_count != null && req.guarantor_max_concurrent != null && (
+                      <p className="text-muted-foreground">يكفل حالياً {req.guarantor_active_guarantees_count} / {req.guarantor_max_concurrent}</p>
+                    )}
                   </div>
                 </div>
 
@@ -485,7 +488,7 @@ function GuarantorRequestsTab() {
 
                 {req.status === 'awaiting_admin_review' && (
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleGetInsight(req.requester_uid)}>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleGetInsight(req.id)}>
                       {busy && insightMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <Sparkles className="w-4 h-4 ml-1" />}
                       تحليل بالذكاء الاصطناعي
                     </Button>
@@ -493,7 +496,7 @@ function GuarantorRequestsTab() {
                       size="sm"
                       className="bg-green-600 hover:bg-green-700"
                       disabled={busy}
-                      onClick={() => handleDecision(req.requester_uid, "approved")}
+                      onClick={() => handleDecision(req.id, "approved")}
                     >
                       {busy && decisionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <UserCheck className="w-4 h-4 ml-1" />}
                       الموافقة على الكفالة
@@ -502,7 +505,7 @@ function GuarantorRequestsTab() {
                       size="sm"
                       variant="destructive"
                       disabled={busy}
-                      onClick={() => handleDecision(req.requester_uid, "rejected")}
+                      onClick={() => handleDecision(req.id, "rejected")}
                     >
                       {busy && decisionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <UserX className="w-4 h-4 ml-1" />}
                       رفض الكفالة

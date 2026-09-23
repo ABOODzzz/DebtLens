@@ -8,6 +8,7 @@
 import type { GuarantorDecisionResultStatus } from './guarantorDecisionResultStatus';
 
 export interface GuarantorDecisionResult {
+  relationship_id: string;
   requester_uid: string;
   guarantor_uid: string;
   status: GuarantorDecisionResultStatus;

@@ -18,8 +18,7 @@ export interface AdminUserDetail {
   review_status: AdminUserDetailReviewStatus;
   /** @nullable */
   review_reason?: string | null;
-  /** @nullable */
-  guarantor_uid?: string | null;
+  approved_guarantor_uids?: string[];
   /** @nullable */
   updated_at?: Date | null;
   kyc: AdminUserKyc;

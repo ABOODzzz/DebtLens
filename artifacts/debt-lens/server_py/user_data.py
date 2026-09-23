@@ -237,5 +237,4 @@ def get_user_financial_profile(uid: str) -> dict:
         "debt_to_income_percentage": debt_to_income_percentage,
         "stacking_flag": stacking_flag,
         "institution_breakdown": institution_breakdown,
-        "guarantor_uid": user_doc.get("guarantorUid"),
     }
