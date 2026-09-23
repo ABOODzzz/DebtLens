@@ -181,6 +181,8 @@ function loanApplicationStatusLabel(status: string) {
   switch (status) {
     case 'submitted': return 'تم الإرسال، قيد المراجعة النهائية';
     case 'awaiting_guarantor': return 'بانتظار كفيل رقمي';
+    case 'approved': return 'تمت الموافقة النهائية';
+    case 'admin_rejected': return 'رُفض بعد المراجعة النهائية';
     case 'rejected': return 'غير مؤهل حالياً';
     default: return status;
   }
@@ -190,6 +192,8 @@ function loanApplicationStatusClass(status: string) {
   switch (status) {
     case 'submitted': return 'bg-green-100 text-green-700';
     case 'awaiting_guarantor': return 'bg-yellow-100 text-yellow-700';
+    case 'approved': return 'bg-green-100 text-green-700';
+    case 'admin_rejected': return 'bg-red-100 text-red-700';
     case 'rejected': return 'bg-red-100 text-red-700';
     default: return 'bg-muted text-muted-foreground';
   }
@@ -259,7 +263,7 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
             </div>
           </div>
 
-          {application!.status === 'submitted' && application!.recommended_amount != null && (
+          {(application!.status === 'submitted' || application!.status === 'approved') && application!.recommended_amount != null && (
             <div className="grid grid-cols-2 gap-4 text-sm p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
               <div>
                 <p className="opacity-80">المبلغ الموصى به</p>
@@ -278,7 +282,13 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
             <InlineGuarantorRequest application={application!} guarantorNetwork={guarantorNetwork} />
           )}
 
-          {application!.status === 'rejected' && (
+          {application!.status === 'admin_rejected' && application!.admin_decision_reason && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              سبب الرفض: {application!.admin_decision_reason}
+            </div>
+          )}
+
+          {(application!.status === 'rejected' || application!.status === 'admin_rejected') && (
             <Button variant="outline" onClick={() => setWizardOpen(true)}>تقديم طلب جديد</Button>
           )}
         </CardContent>

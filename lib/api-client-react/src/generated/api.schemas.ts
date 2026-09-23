@@ -184,6 +184,8 @@ export type LoanApplicationStatus = typeof LoanApplicationStatus[keyof typeof Lo
 export const LoanApplicationStatus = {
   awaiting_guarantor: 'awaiting_guarantor',
   submitted: 'submitted',
+  approved: 'approved',
+  admin_rejected: 'admin_rejected',
   rejected: 'rejected',
 } as const;
 
@@ -196,6 +198,8 @@ export interface LoanApplication {
   requires_guarantor: boolean;
   /** @nullable */
   guarantor_relationship_id?: string | null;
+  /** @nullable */
+  admin_decision_reason?: string | null;
   eligible: boolean;
   /** @nullable */
   risk_tier?: string | null;
@@ -576,6 +580,33 @@ export interface GuarantorDecisionResult {
   requester_uid: string;
   guarantor_uid: string;
   status: GuarantorDecisionResultStatus;
+}
+
+export type AdminLoanApplicationSummary = LoanApplication & ({
+  customer_name: string;
+  /** @nullable */
+  customer_national_id?: string | null;
+});
+
+export interface AdminLoanApplicationsList {
+  application_count: number;
+  awaiting_count: number;
+  applications: AdminLoanApplicationSummary[];
+}
+
+export type LoanApplicationDecisionInputDecision = typeof LoanApplicationDecisionInputDecision[keyof typeof LoanApplicationDecisionInputDecision];
+
+
+export const LoanApplicationDecisionInputDecision = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface LoanApplicationDecisionInput {
+  application_id: number;
+  decision: LoanApplicationDecisionInputDecision;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export type KycDecisionInputDecision = typeof KycDecisionInputDecision[keyof typeof KycDecisionInputDecision];

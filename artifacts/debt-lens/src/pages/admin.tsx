@@ -8,6 +8,9 @@ import {
   getListGuarantorRequestsQueryKey,
   useGetGuarantorInsight,
   useSubmitGuarantorDecision,
+  useListLoanApplications,
+  getListLoanApplicationsQueryKey,
+  useSubmitLoanApplicationDecision,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff } from "lucide-react";
+import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminPage() {
@@ -27,12 +30,16 @@ export default function AdminPage() {
         <TabsList className="mb-6">
           <TabsTrigger value="users">العملاء</TabsTrigger>
           <TabsTrigger value="guarantors">طلبات الكفيل الرقمي</TabsTrigger>
+          <TabsTrigger value="loans">طلبات التمويل</TabsTrigger>
         </TabsList>
         <TabsContent value="users">
           <UsersTab />
         </TabsContent>
         <TabsContent value="guarantors">
           <GuarantorRequestsTab />
+        </TabsContent>
+        <TabsContent value="loans">
+          <LoanApplicationsTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -520,6 +527,181 @@ function GuarantorRequestsTab() {
           <div className="text-center py-12 text-muted-foreground">لا يوجد طلبات كفالة رقمية حتى الآن.</div>
         )}
       </div>
+    </div>
+  );
+}
+
+// --- Loan applications tab: admin makes the final disbursement call ---
+function loanApplicationStatusBadge(statusValue: string) {
+  if (statusValue === 'approved') return { variant: 'default' as const, label: 'تمت الموافقة' };
+  if (statusValue === 'admin_rejected') return { variant: 'destructive' as const, label: 'مرفوض' };
+  return { variant: 'secondary' as const, label: 'بانتظار القرار النهائي' };
+}
+
+function LoanApplicationsTab() {
+  const queryClient = useQueryClient();
+  const applicationsQuery = useListLoanApplications();
+  const decisionMutation = useSubmitLoanApplicationDecision();
+  const [activeApplicationId, setActiveApplicationId] = useState<number | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const { toast } = useToast();
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListLoanApplicationsQueryKey() });
+
+  const handleApprove = async (applicationId: number) => {
+    setActiveApplicationId(applicationId);
+    try {
+      await decisionMutation.mutateAsync({ data: { application_id: applicationId, decision: "approved" } });
+      invalidate();
+    } catch (error) {
+      toast({ variant: "destructive", title: "تعذر حفظ القرار", description: "يرجى المحاولة مرة أخرى." });
+    } finally {
+      setActiveApplicationId(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (rejectTarget == null) return;
+    setActiveApplicationId(rejectTarget);
+    try {
+      await decisionMutation.mutateAsync({
+        data: { application_id: rejectTarget, decision: "rejected", reason: rejectReason.trim() || null },
+      });
+      invalidate();
+      setRejectTarget(null);
+      setRejectReason("");
+    } catch (error) {
+      toast({ variant: "destructive", title: "تعذر حفظ القرار", description: "يرجى المحاولة مرة أخرى." });
+    } finally {
+      setActiveApplicationId(null);
+    }
+  };
+
+  if (applicationsQuery.isLoading) {
+    return <div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+  }
+
+  if (applicationsQuery.isError || !applicationsQuery.data) {
+    return (
+      <div className="flex items-center justify-center p-8 text-center text-destructive">
+        <AlertCircle className="w-12 h-12 mx-auto mb-4" />
+        <p>حدث خطأ أثناء تحميل طلبات التمويل.</p>
+      </div>
+    );
+  }
+
+  const { applications, awaiting_count } = applicationsQuery.data;
+
+  return (
+    <div>
+      <div className="flex justify-end mb-4">
+        <div className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+          بانتظار القرار النهائي: {awaiting_count}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        {applications.map((app) => {
+          const badge = loanApplicationStatusBadge(app.status);
+          const busy = activeApplicationId === app.id && decisionMutation.isPending;
+          return (
+            <Card key={app.id}>
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-5 h-5 text-secondary" />
+                    <span className="font-bold">{app.customer_name}</span>
+                    {app.customer_national_id && (
+                      <span className="text-xs text-muted-foreground dir-ltr">{app.customer_national_id}</span>
+                    )}
+                  </div>
+                  <Badge variant={badge.variant}>{badge.label}</Badge>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="p-3 bg-muted/30 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">المبلغ المطلوب</p>
+                    <p className="font-bold">{app.requested_amount.toLocaleString()} د.أ</p>
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">المبلغ الموصى به</p>
+                    <p className="font-bold">{app.recommended_amount != null ? `${app.recommended_amount.toLocaleString()} د.أ` : "-"}</p>
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">الدرجة الائتمانية</p>
+                    <p className="font-bold">{app.credit_score ?? "-"}</p>
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">مستوى المخاطرة</p>
+                    <p className="font-bold">{app.risk_tier ?? "-"}</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">الغرض: {app.purpose}</p>
+                {app.guarantor_relationship_id && (
+                  <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2">
+                    مدعوم بكفيل رقمي مُوافَق عليه (معرّف الكفالة: {app.guarantor_relationship_id})
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground leading-relaxed">{app.recommendation}</p>
+
+                {app.status === 'admin_rejected' && app.admin_decision_reason && (
+                  <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-2">
+                    سبب الرفض: {app.admin_decision_reason}
+                  </p>
+                )}
+
+                {app.status === 'submitted' && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      disabled={busy}
+                      onClick={() => handleApprove(app.id)}
+                    >
+                      {busy && decisionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <UserCheck className="w-4 h-4 ml-1" />}
+                      الموافقة النهائية
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={busy}
+                      onClick={() => { setRejectTarget(app.id); setRejectReason(""); }}
+                    >
+                      <UserX className="w-4 h-4 ml-1" /> رفض الطلب
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+        {applications.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">لا يوجد طلبات تمويل تنتظر القرار النهائي بعد.</div>
+        )}
+      </div>
+
+      <Dialog open={rejectTarget != null} onOpenChange={(open) => !open && setRejectTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>سبب الرفض</DialogTitle>
+            <DialogDescription>سيظهر هذا السبب للعميل ضمن حالة طلبه.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="مثال: عدم استقرار الدخل خلال الأشهر الأخيرة"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)}>إلغاء</Button>
+            <Button variant="destructive" disabled={decisionMutation.isPending} onClick={handleReject}>
+              {decisionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "تأكيد الرفض"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -5,3 +5,4 @@
 - [DebtLens eligibility contract & method mismatch](debtlens-eligibility-contract-and-method-mismatch.md) — contract tests must use the client's real HTTP method, not the route's; watch for 3.0-style `nullable: true` in the 3.1 spec.
 - [DebtLens guarantor network model](debtlens-guarantor-network-model.md) — many-to-many relationships live in `guarantorRelationships` docs, never a field on the user; caps + admin-only approval + shared `notifications` collection.
 - [DebtLens loan application flow](debtlens-loan-application-flow.md) — Postgres `loan_applications` cross-linked to Firestore `guarantorRelationships`; status derived deterministically from DTI ceilings, not AI.
+- [DebtLens loan_applications lifecycle & test mocking](debtlens-loan-application-lifecycle.md) — status flow through terminal admin decision; admin_routes.py uses inline `import module` so tests must monkeypatch the real module, not admin_routes' attribute.

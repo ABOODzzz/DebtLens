@@ -1380,10 +1380,36 @@ def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_cu
         "status": body.decision,
     }
 
+@router.get("/loan-applications")
+def list_loan_applications(admin: dict = Depends(get_current_admin)):
+    import loan_application_store
 
-# ---------------------------------------------------------------------------
-# POST /portfolio-summary
-# ---------------------------------------------------------------------------
+    db = _get_db()
+
+    applications_out = []
+    for status_value in ("submitted", "approved", "admin_rejected"):
+        for application in loan_application_store.list_applications_by_status(status_value):
+            try:
+                user_doc = _get_user_doc(db, application["uid"])
+            except HTTPException:
+                user_doc = {}
+            name, national_id = _customer_identity(user_doc)
+            applications_out.append(
+                {
+                    **application,
+                    "customer_name": name,
+                    "customer_national_id": national_id,
+                }
+            )
+
+    priority = {"submitted": 0, "approved": 1, "admin_rejected": 2}
+    applications_out.sort(key=lambda a: (priority.get(a["status"], 1), a["created_at"]))
+
+    return {
+        "application_count": len(applications_out),
+        "awaiting_count": sum(1 for a in applications_out if a["status"] == "submitted"),
+        "applications": applications_out,
+    }
 class PortfolioSummaryBody(BaseModel):
     uids: list[str]
 
@@ -1448,3 +1474,52 @@ def portfolio_summary(body: PortfolioSummaryBody, admin: dict = Depends(get_curr
         "user_count": len(entries),
         "ranked_summary": ranked_summary,
     }
+
+class LoanApplicationDecisionBody(BaseModel):
+    application_id: int
+    decision: Literal["approved", "rejected"]
+    reason: str | None = None
+
+
+@router.post("/loan-application-decision")
+def loan_application_decision(body: LoanApplicationDecisionBody, admin: dict = Depends(get_current_admin)):
+    from notifications import notify
+
+    import loan_application_store
+
+    application = loan_application_store.get_loan_application(body.application_id)
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan application not found.")
+    if application["status"] != "submitted":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This loan application isn't awaiting a final admin decision.",
+        )
+
+    new_status = "approved" if body.decision == "approved" else "admin_rejected"
+    updated = loan_application_store.update_admin_decision(body.application_id, new_status, body.reason)
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This loan application isn't awaiting a final admin decision.",
+        )
+
+    db = _get_db()
+    if body.decision == "approved":
+        title, message = "تمت الموافقة على طلب التمويل", (
+            f"تمت الموافقة النهائية على طلب تمويلك بمبلغ {updated['recommended_amount'] or updated['requested_amount']} دينار."
+        )
+    else:
+        reason_line = f" السبب: {body.reason}" if body.reason else ""
+        title, message = "تم رفض طلب التمويل", f"رُفض طلب تمويلك بعد المراجعة النهائية.{reason_line}"
+
+    notify(
+        db,
+        uid=application["uid"],
+        notif_type=f"loan_application_{body.decision}",
+        title=title,
+        message=message,
+        related_id=str(body.application_id),
+    )
+
+    return updated

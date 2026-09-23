@@ -22,6 +22,11 @@ import { z } from "zod/v4";
 // admin's final guarantor decision (server_py/admin_routes.py) flips this
 // row's status back to `submitted` (approved) or `awaiting_guarantor`
 // (rejected, so the applicant can try a different guarantor).
+//
+// Once a row reaches `submitted`, it awaits a *separate* final disbursement
+// decision from an admin (see admin_routes.py's loan_application_decision),
+// which moves it to the terminal `approved` or `admin_rejected` state and
+// records the reason (for a rejection) in `adminDecisionReason`.
 export const loanApplicationsTable = pgTable("loan_applications", {
   id: serial("id").primaryKey(),
   uid: text("uid").notNull(),
@@ -30,10 +35,11 @@ export const loanApplicationsTable = pgTable("loan_applications", {
     scale: 2,
   }).notNull(),
   purpose: text("purpose").notNull(),
-  // ineligible | awaiting_guarantor | submitted | rejected
+  // ineligible | awaiting_guarantor | submitted | approved | admin_rejected | rejected
   status: text("status").notNull().default("submitted"),
   requiresGuarantor: boolean("requires_guarantor").notNull().default(false),
   guarantorRelationshipId: text("guarantor_relationship_id"),
+  adminDecisionReason: text("admin_decision_reason"),
   eligible: boolean("eligible").notNull(),
   riskTier: text("risk_tier"),
   creditScore: integer("credit_score"),

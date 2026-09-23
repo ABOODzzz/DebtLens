@@ -16,6 +16,8 @@ export interface LoanApplication {
   requires_guarantor: boolean;
   /** @nullable */
   guarantor_relationship_id?: string | null;
+  /** @nullable */
+  admin_decision_reason?: string | null;
   eligible: boolean;
   /** @nullable */
   risk_tier?: string | null;

@@ -12,5 +12,7 @@ export type LoanApplicationStatus = typeof LoanApplicationStatus[keyof typeof Lo
 export const LoanApplicationStatus = {
   awaiting_guarantor: 'awaiting_guarantor',
   submitted: 'submitted',
+  approved: 'approved',
+  admin_rejected: 'admin_rejected',
   rejected: 'rejected',
 } as const;

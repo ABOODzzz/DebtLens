@@ -168,9 +168,10 @@ export const SubmitLoanApplicationResponse = zod.object({
   "uid": zod.string(),
   "requested_amount": zod.number(),
   "purpose": zod.string(),
-  "status": zod.enum(['awaiting_guarantor', 'submitted', 'rejected']),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'approved', 'admin_rejected', 'rejected']),
   "requires_guarantor": zod.boolean(),
   "guarantor_relationship_id": zod.string().nullish(),
+  "admin_decision_reason": zod.string().nullish(),
   "eligible": zod.boolean(),
   "risk_tier": zod.string().nullish(),
   "credit_score": zod.number().int().nullish(),
@@ -193,9 +194,10 @@ export const GetCurrentLoanApplicationResponse = zod.object({
   "uid": zod.string(),
   "requested_amount": zod.number(),
   "purpose": zod.string(),
-  "status": zod.enum(['awaiting_guarantor', 'submitted', 'rejected']),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'approved', 'admin_rejected', 'rejected']),
   "requires_guarantor": zod.boolean(),
   "guarantor_relationship_id": zod.string().nullish(),
+  "admin_decision_reason": zod.string().nullish(),
   "eligible": zod.boolean(),
   "risk_tier": zod.string().nullish(),
   "credit_score": zod.number().int().nullish(),
@@ -223,9 +225,10 @@ export const AttachGuarantorToApplicationResponse = zod.object({
   "uid": zod.string(),
   "requested_amount": zod.number(),
   "purpose": zod.string(),
-  "status": zod.enum(['awaiting_guarantor', 'submitted', 'rejected']),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'approved', 'admin_rejected', 'rejected']),
   "requires_guarantor": zod.boolean(),
   "guarantor_relationship_id": zod.string().nullish(),
+  "admin_decision_reason": zod.string().nullish(),
   "eligible": zod.boolean(),
   "risk_tier": zod.string().nullish(),
   "credit_score": zod.number().int().nullish(),
@@ -497,6 +500,71 @@ export const SubmitGuarantorDecisionResponse = zod.object({
   "requester_uid": zod.string(),
   "guarantor_uid": zod.string(),
   "status": zod.enum(['approved', 'rejected'])
+})
+
+
+/**
+ * @summary List loan applications awaiting or already given a final admin disbursement decision
+ */
+export const ListLoanApplicationsResponse = zod.object({
+  "application_count": zod.number().int(),
+  "awaiting_count": zod.number().int(),
+  "applications": zod.array(zod.object({
+  "id": zod.number().int(),
+  "uid": zod.string(),
+  "requested_amount": zod.number(),
+  "purpose": zod.string(),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'approved', 'admin_rejected', 'rejected']),
+  "requires_guarantor": zod.boolean(),
+  "guarantor_relationship_id": zod.string().nullish(),
+  "admin_decision_reason": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "risk_tier": zod.string().nullish(),
+  "credit_score": zod.number().int().nullish(),
+  "recommended_amount": zod.number().nullish(),
+  "interest_rate": zod.number().nullish(),
+  "term_months": zod.number().int().nullish(),
+  "monthly_installment": zod.number().nullish(),
+  "total_repayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+}).and(zod.object({
+  "customer_name": zod.string(),
+  "customer_national_id": zod.string().nullish()
+})))
+})
+
+
+/**
+ * @summary Final admin approve/reject decision on a submitted loan application
+ */
+export const SubmitLoanApplicationDecisionBody = zod.object({
+  "application_id": zod.number().int(),
+  "decision": zod.enum(['approved', 'rejected']),
+  "reason": zod.string().nullish()
+})
+
+export const SubmitLoanApplicationDecisionResponse = zod.object({
+  "id": zod.number().int(),
+  "uid": zod.string(),
+  "requested_amount": zod.number(),
+  "purpose": zod.string(),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'approved', 'admin_rejected', 'rejected']),
+  "requires_guarantor": zod.boolean(),
+  "guarantor_relationship_id": zod.string().nullish(),
+  "admin_decision_reason": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "risk_tier": zod.string().nullish(),
+  "credit_score": zod.number().int().nullish(),
+  "recommended_amount": zod.number().nullish(),
+  "interest_rate": zod.number().nullish(),
+  "term_months": zod.number().int().nullish(),
+  "monthly_installment": zod.number().nullish(),
+  "total_repayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
 })
 
 

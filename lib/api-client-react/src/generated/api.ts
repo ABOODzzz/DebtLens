@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminLoanApplicationsList,
   AdminUserDetail,
   AdminUsersResponse,
   AdviceResult,
@@ -46,6 +47,7 @@ import type {
   KycSubmitInput,
   KycSubmitResponse,
   LoanApplication,
+  LoanApplicationDecisionInput,
   LoanApplicationInput,
   LoanEligibilityResult,
   MarkAllNotificationsReadResult,
@@ -1941,6 +1943,171 @@ export const useSubmitGuarantorDecision = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getSubmitGuarantorDecisionMutationOptions(options));
+    }
+
+export const getListLoanApplicationsUrl = () => {
+
+
+
+
+  return `/api/admin/loan-applications`
+}
+
+/**
+ * @summary List loan applications awaiting or already given a final admin disbursement decision
+ */
+export const listLoanApplications = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminLoanApplicationsList> => {
+
+  return customFetch<AdminLoanApplicationsList>(getListLoanApplicationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLoanApplicationsQueryKey = () => {
+    return [
+    `/api/admin/loan-applications`
+    ] as const;
+    }
+
+
+export const getListLoanApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof listLoanApplications>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLoanApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLoanApplicationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLoanApplications>>> = ({ signal }) => listLoanApplications({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLoanApplications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLoanApplicationsQueryResult = NonNullable<Awaited<ReturnType<typeof listLoanApplications>>>
+export type ListLoanApplicationsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List loan applications awaiting or already given a final admin disbursement decision
+ */
+
+export function useListLoanApplications<TData = Awaited<ReturnType<typeof listLoanApplications>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLoanApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLoanApplicationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubmitLoanApplicationDecisionUrl = () => {
+
+
+
+
+  return `/api/admin/loan-application-decision`
+}
+
+/**
+ * @summary Final admin approve/reject decision on a submitted loan application
+ */
+export const submitLoanApplicationDecision = async (loanApplicationDecisionInput: LoanApplicationDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<LoanApplication> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LoanApplication>(getSubmitLoanApplicationDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(loanApplicationDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitLoanApplicationDecisionMutationKey = () => ['submitLoanApplicationDecision'] as const;
+
+export const getSubmitLoanApplicationDecisionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitLoanApplicationDecision>>, TError,SubmitLoanApplicationDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitLoanApplicationDecision>>, TError,SubmitLoanApplicationDecisionMutationVariables, TContext> => {
+
+const mutationKey = getSubmitLoanApplicationDecisionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitLoanApplicationDecision>>, SubmitLoanApplicationDecisionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  submitLoanApplicationDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitLoanApplicationDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof submitLoanApplicationDecision>>>
+    export type SubmitLoanApplicationDecisionMutationBody = BodyType<LoanApplicationDecisionInput>
+    export type SubmitLoanApplicationDecisionMutationError = ErrorType<ErrorResponse>
+    export type SubmitLoanApplicationDecisionMutationVariables = {data: BodyType<LoanApplicationDecisionInput>}
+
+    /**
+ * @summary Final admin approve/reject decision on a submitted loan application
+ */
+export const useSubmitLoanApplicationDecision = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitLoanApplicationDecision>>, TError,SubmitLoanApplicationDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitLoanApplicationDecision>>,
+        TError,
+        SubmitLoanApplicationDecisionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitLoanApplicationDecisionMutationOptions(options));
     }
 
 export const getSubmitKycDecisionUrl = () => {

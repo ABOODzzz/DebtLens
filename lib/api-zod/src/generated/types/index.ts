@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './adminLoanApplicationsList';
+export * from './adminLoanApplicationSummary';
 export * from './adminUser';
 export * from './adminUserDetail';
 export * from './adminUserDetailReviewStatus';
@@ -61,6 +63,8 @@ export * from './kycSubmitInputProfile';
 export * from './kycSubmitResponse';
 export * from './kycSubmitResponseReviewStatus';
 export * from './loanApplication';
+export * from './loanApplicationDecisionInput';
+export * from './loanApplicationDecisionInputDecision';
 export * from './loanApplicationInput';
 export * from './loanApplicationStatus';
 export * from './loanEligibilityResult';

@@ -35,6 +35,7 @@ def _row_to_dict(row: dict) -> dict:
         "status": row["status"],
         "requires_guarantor": row["requires_guarantor"],
         "guarantor_relationship_id": row["guarantor_relationship_id"],
+        "admin_decision_reason": row["admin_decision_reason"],
         "eligible": row["eligible"],
         "risk_tier": row["risk_tier"],
         "credit_score": row["credit_score"],
@@ -109,6 +110,23 @@ def get_loan_application(application_id: int) -> dict | None:
     return _row_to_dict(row) if row else None
 
 
+def list_applications_by_status(status_value: str) -> list[dict]:
+    """
+    All applications currently sitting in `status_value`, oldest first -- used
+    by the admin dashboard to list applications awaiting a final
+    approve/reject disbursement decision (see api_routes.py's
+    `/loan-application` for how a row reaches `submitted`).
+    """
+    with psycopg2.connect(_database_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM loan_applications WHERE status = %s ORDER BY created_at ASC",
+                (status_value,),
+            )
+            rows = cur.fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
 def attach_guarantor_relationship(application_id: int, relationship_id: str) -> dict | None:
     """Link a just-requested digital guarantor relationship to this application."""
     with psycopg2.connect(_database_url()) as conn:
@@ -144,6 +162,29 @@ def update_status_by_relationship(relationship_id: str, status: str) -> dict | N
                 RETURNING *
                 """,
                 (status, relationship_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return _row_to_dict(row) if row else None
+
+
+def update_admin_decision(application_id: int, status_value: str, reason: str | None) -> dict | None:
+    """
+    Record the admin's final disbursement decision on a `submitted`
+    application, moving it to a terminal state (`approved` or
+    `admin_rejected`). Only applies when the row is still `submitted` --
+    returns None if it has already moved on (e.g. a concurrent decision).
+    """
+    with psycopg2.connect(_database_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE loan_applications
+                SET status = %s, admin_decision_reason = %s, updated_at = now()
+                WHERE id = %s AND status = 'submitted'
+                RETURNING *
+                """,
+                (status_value, reason, application_id),
             )
             row = cur.fetchone()
         conn.commit()
