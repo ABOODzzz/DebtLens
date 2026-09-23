@@ -18,6 +18,7 @@ row that has already been decided.
 
 import os
 import sys
+from copy import deepcopy
 from datetime import datetime, timezone
 
 import pytest
@@ -167,6 +168,118 @@ class FakeDb:
 
     def collection(self, name):
         return FakeCollection(name, self._relationships)
+
+
+def _database_application_row(status_value: str) -> dict:
+    row = _application_row(1, status_value)
+    row["created_at"] = datetime.fromisoformat(row["created_at"])
+    row["updated_at"] = datetime.fromisoformat(row["updated_at"])
+    return row
+
+
+class FakeTransactionalDecisionDatabase:
+    """Small transactional stand-in for the Postgres store tests.
+
+    The store relies on psycopg2's connection context manager to commit when
+    the block succeeds and roll back when an execute raises. Keeping the
+    committed state separate from each connection's working copy makes those
+    semantics observable without requiring a live database for this contract
+    test.
+    """
+
+    def __init__(self, application: dict):
+        self.applications = {application["id"]: application}
+        self.history: list[dict] = []
+        self.fail_history_insert = False
+        self.commit_count = 0
+        self.rollback_count = 0
+
+    def connect(self, *args, **kwargs):
+        return FakeTransactionalDecisionConnection(self)
+
+
+class FakeTransactionalDecisionConnection:
+    def __init__(self, database: FakeTransactionalDecisionDatabase):
+        self._database = database
+        self.applications = deepcopy(database.applications)
+        self.history = deepcopy(database.history)
+        self._committed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        if exception_type is None:
+            if not self._committed:
+                self.commit()
+        else:
+            self._database.rollback_count += 1
+        return False
+
+    def commit(self):
+        self._database.applications = deepcopy(self.applications)
+        self._database.history = deepcopy(self.history)
+        self._database.commit_count += 1
+        self._committed = True
+
+    def cursor(self, **kwargs):
+        return FakeTransactionalDecisionCursor(self)
+
+
+class FakeTransactionalDecisionCursor:
+    def __init__(self, connection: FakeTransactionalDecisionConnection):
+        self._connection = connection
+        self._last_row = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        return False
+
+    def execute(self, query, params):
+        normalized_query = " ".join(query.split())
+
+        if normalized_query.startswith("UPDATE loan_applications"):
+            status_value, reason, application_id = params
+            row = self._connection.applications.get(application_id)
+            if "AND status = 'submitted'" in normalized_query:
+                matches = row is not None and row["status"] == "submitted"
+            else:
+                matches = row is not None and row["status"] in ("approved", "admin_rejected")
+
+            if matches:
+                row["status"] = status_value
+                row["admin_decision_reason"] = reason
+                row["updated_at"] = datetime.now(timezone.utc)
+                self._last_row = deepcopy(row)
+            else:
+                self._last_row = None
+            return
+
+        if normalized_query.startswith("INSERT INTO loan_application_decision_history"):
+            if self._connection._database.fail_history_insert:
+                raise RuntimeError("simulated decision history insert failure")
+
+            application_id, decision, reason, admin_uid = params
+            self._connection.history.append(
+                {
+                    "id": len(self._connection.history) + 1,
+                    "application_id": application_id,
+                    "decision": decision,
+                    "reason": reason,
+                    "admin_uid": admin_uid,
+                    "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc).replace(
+                        second=len(self._connection.history)
+                    ),
+                }
+            )
+            return
+
+        raise AssertionError(f"Unexpected SQL in transaction test: {normalized_query}")
+
+    def fetchone(self):
+        return deepcopy(self._last_row)
 
 
 def _approved_relationship(**overrides) -> dict:
@@ -368,6 +481,70 @@ class TestAdminLoanApplicationEndpoints:
 
         response = client.get("/api/admin/loan-applications")
         assert response.status_code == 403
+
+
+class TestLoanApplicationDecisionStore:
+    def _patch_database(self, monkeypatch, database):
+        monkeypatch.setattr(loan_application_store, "_database_url", lambda: "transaction-test-db")
+        monkeypatch.setattr(loan_application_store.psycopg2, "connect", database.connect)
+
+    @pytest.mark.parametrize(
+        ("operation", "initial_status", "next_status"),
+        [
+            pytest.param("initial", "submitted", "approved", id="initial-decision"),
+            pytest.param("revision", "approved", "admin_rejected", id="revised-decision"),
+        ],
+    )
+    def test_audit_insert_failure_rolls_back_application_update(
+        self, monkeypatch, operation, initial_status, next_status
+    ):
+        database = FakeTransactionalDecisionDatabase(_database_application_row(initial_status))
+        database.fail_history_insert = True
+        self._patch_database(monkeypatch, database)
+
+        with pytest.raises(RuntimeError, match="simulated decision history insert failure"):
+            if operation == "initial":
+                loan_application_store.update_admin_decision(
+                    1, next_status, "decision reason", "admin-uid-1"
+                )
+            else:
+                loan_application_store.revise_admin_decision(
+                    1, next_status, "revision reason", "admin-uid-2"
+                )
+
+        assert database.applications[1]["status"] == initial_status
+        assert database.applications[1]["admin_decision_reason"] is None
+        assert database.history == []
+        assert database.commit_count == 0
+        assert database.rollback_count == 1
+
+    def test_initial_decision_and_revision_append_ordered_admin_history(self, monkeypatch):
+        database = FakeTransactionalDecisionDatabase(_database_application_row("submitted"))
+        self._patch_database(monkeypatch, database)
+
+        initial = loan_application_store.update_admin_decision(
+            1, "approved", "initial approval", "admin-uid-initial"
+        )
+        revision = loan_application_store.revise_admin_decision(
+            1, "admin_rejected", "corrected decision", "admin-uid-revision"
+        )
+
+        assert initial["status"] == "approved"
+        assert revision["status"] == "admin_rejected"
+        assert database.applications[1]["status"] == "admin_rejected"
+        assert [entry["id"] for entry in database.history] == [1, 2]
+        assert [entry["decision"] for entry in database.history] == ["approved", "rejected"]
+        assert [entry["admin_uid"] for entry in database.history] == [
+            "admin-uid-initial",
+            "admin-uid-revision",
+        ]
+        assert [entry["reason"] for entry in database.history] == [
+            "initial approval",
+            "corrected decision",
+        ]
+        assert database.history[0]["created_at"] < database.history[1]["created_at"]
+        assert database.commit_count == 2
+        assert database.rollback_count == 0
 
 
 class TestAdminLoanApplicationRevise:
