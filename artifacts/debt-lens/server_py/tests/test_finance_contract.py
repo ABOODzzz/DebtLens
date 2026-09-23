@@ -1,15 +1,18 @@
 """
-Contract tests for the /analyze, /restructure, and /advice endpoints.
+Contract tests for the /analyze, /restructure, /advice, and
+/consolidation-request endpoints.
 
 These endpoints feed the dashboard's "Full Analysis", "Restructure Plan",
-and "AI Advice" dialogs (see src/pages/dashboard.tsx). The dialogs read
-specific fields off the JSON response (summary, debtBreakdown,
-totalRemainingDebt, debtToIncomeRatio, insights, currentMonthlyBurden,
-targetMonthlyBurden, months, steps, advice, generatedAt) with no runtime
-validation of their own, so a backend change that renames/drops/nulls one
-of those fields would silently render a blank dialog in production.
+"AI Advice", and "Consolidation Request" dialogs (see
+src/pages/dashboard.tsx). The dialogs read specific fields off the JSON
+response (summary, debtBreakdown, totalRemainingDebt, debtToIncomeRatio,
+insights, currentMonthlyBurden, targetMonthlyBurden, months, steps,
+advice, generatedAt, id, institutionsIncluded,
+estimatedConsolidatedMonthlyPayment) with no runtime validation of their
+own, so a backend change that renames/drops/nulls one of those fields
+would silently render a blank dialog in production.
 
-This test exercises all three endpoints against a verified test profile
+This test exercises all four endpoints against a verified test profile
 (a customer with active, remaining-balance loans) and:
 
 1. Validates the JSON response against the OpenAPI schema in
@@ -24,7 +27,7 @@ This test exercises all three endpoints against a verified test profile
 import copy
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 import yaml
@@ -40,11 +43,41 @@ if SERVER_PY_DIR not in sys.path:
     sys.path.insert(0, SERVER_PY_DIR)
 
 import api_routes  # noqa: E402
+import consolidation_store  # noqa: E402
 import finance  # noqa: E402
 from firebase_client import get_current_user  # noqa: E402
 from main import app  # noqa: E402
 
 TEST_UID = "contract-test-uid"
+
+
+class FakeConsolidationStore:
+    """
+    Records every persistence call `/consolidation-request` makes and hands
+    back a database-shaped row (incrementing id, real timestamp), so the
+    test can assert the endpoint actually persists the request -- not just
+    that it fabricates a response shape that happens to match the schema.
+    """
+
+    def __init__(self):
+        self.calls: list[dict] = []
+        self._next_id = 1
+
+    def insert_consolidation_request(self, uid, institutions_included, estimated_consolidated_monthly_payment):
+        self.calls.append(
+            {
+                "uid": uid,
+                "institutions_included": institutions_included,
+                "estimated_consolidated_monthly_payment": estimated_consolidated_monthly_payment,
+            }
+        )
+        row_id = self._next_id
+        self._next_id += 1
+        return {
+            "id": row_id,
+            "status": "submitted",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 def _verified_profile_with_active_loans() -> dict:
@@ -132,7 +165,14 @@ def openapi_spec() -> dict:
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def fake_consolidation_store(monkeypatch):
+    fake = FakeConsolidationStore()
+    monkeypatch.setattr(api_routes.consolidation_store, "insert_consolidation_request", fake.insert_consolidation_request)
+    return fake
+
+
+@pytest.fixture()
+def client(monkeypatch, fake_consolidation_store):
     monkeypatch.setattr(
         api_routes, "get_user_financial_profile", lambda uid: copy.deepcopy(_verified_profile_with_active_loans())
     )
@@ -222,6 +262,37 @@ class TestAdviceEndpoint:
         datetime.fromisoformat(data["generatedAt"].replace("Z", "+00:00"))
 
 
+class TestConsolidationRequestEndpoint:
+    def test_consolidation_request_matches_schema_and_dashboard_expectations(
+        self, client, openapi_spec, fake_consolidation_store
+    ):
+        response = client.post("/api/consolidation-request")
+        assert response.status_code == 201
+        data = response.json()
+
+        _validate_against_schema(data, "ConsolidationRequestResult", openapi_spec)
+
+        assert data["awaitingVerification"] is False
+
+        # The request must actually be persisted (real id/status/timestamp
+        # from the store), not fabricated in the route handler.
+        assert len(fake_consolidation_store.calls) == 1
+        persisted_call = fake_consolidation_store.calls[0]
+        assert persisted_call["uid"] == TEST_UID
+        assert persisted_call["institutions_included"] == data["institutionsIncluded"]
+        assert persisted_call["estimated_consolidated_monthly_payment"] == data["estimatedConsolidatedMonthlyPayment"]
+
+        # Fields ConsolidationDialog reads directly off the response.
+        assert isinstance(data["id"], int)
+        assert data["status"] == "submitted"
+        assert isinstance(data["institutionsIncluded"], int) and data["institutionsIncluded"] > 0
+        assert isinstance(data["estimatedConsolidatedMonthlyPayment"], (int, float))
+        assert data["estimatedConsolidatedMonthlyPayment"] > 0
+        assert isinstance(data["createdAt"], str) and data["createdAt"].strip()
+        # Must be a real, parseable timestamp.
+        datetime.fromisoformat(data["createdAt"].replace("Z", "+00:00"))
+
+
 class TestAwaitingVerificationStillWorks:
     """
     Guard the other branch too: when the customer has no verified statements
@@ -281,4 +352,11 @@ class TestAwaitingVerificationStillWorks:
         assert response.status_code == 200
         data = response.json()
         _validate_against_schema(data, "AdviceResult", openapi_spec)
+        assert data["awaitingVerification"] is True
+
+    def test_consolidation_request_awaiting_verification_matches_schema(self, unverified_client, openapi_spec):
+        response = unverified_client.post("/api/consolidation-request")
+        assert response.status_code == 201
+        data = response.json()
+        _validate_against_schema(data, "ConsolidationRequestResult", openapi_spec)
         assert data["awaitingVerification"] is True

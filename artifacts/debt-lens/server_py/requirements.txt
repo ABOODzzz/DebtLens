@@ -4,3 +4,4 @@ jinja2
 requests
 anthropic
 firebase-admin
+psycopg2-binary

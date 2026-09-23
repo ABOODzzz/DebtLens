@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+import consolidation_store
 import finance
 import market_data
 from anthropic_client import ANTHROPIC_MODEL, anthropic_client
@@ -437,7 +438,7 @@ def advice(user: dict = Depends(get_current_user)):
     }
 
 
-@router.post("/consolidation-request")
+@router.post("/consolidation-request", status_code=status.HTTP_201_CREATED)
 def consolidation_request(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
@@ -447,6 +448,10 @@ def consolidation_request(user: dict = Depends(get_current_user)):
     context = _build_restructuring_context(profile)
     if context is None:
         return _awaiting_verification_response()
+
+    consolidate_option = next(
+        option for option in context["restructuring_plan"]["options"] if option["id"] == "consolidate"
+    )
 
     _require_anthropic()
 
@@ -479,8 +484,29 @@ def consolidation_request(user: dict = Depends(get_current_user)):
             detail="Failed to draft the letter right now. Please try again shortly.",
         ) from exc
 
+    institutions_included = len(context["institution_breakdown"])
+    estimated_consolidated_monthly_payment = consolidate_option["monthly_payment"]
+
+    try:
+        persisted = consolidation_store.insert_consolidation_request(
+            uid=user["uid"],
+            institutions_included=institutions_included,
+            estimated_consolidated_monthly_payment=estimated_consolidated_monthly_payment,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to persist consolidation request for uid=%s: %s", user["uid"], exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to record your consolidation request right now. Please try again shortly.",
+        ) from exc
+
     return {
         "awaitingVerification": False,
+        "id": persisted["id"],
+        "status": persisted["status"],
+        "estimatedConsolidatedMonthlyPayment": estimated_consolidated_monthly_payment,
+        "institutionsIncluded": institutions_included,
+        "createdAt": persisted["createdAt"],
         "letter": letter_text,
         "institution_breakdown": context["institution_breakdown"],
     }
