@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldCheck, Mail, Lock, Loader2 } from "lucide-react";
+import { useLanguage } from "@/lib/i18n/context";
 
 export default function LoginPage() {
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +26,7 @@ export default function LoginPage() {
       await signInWithEmailAndPassword(auth, email, password);
       // App.tsx handles redirect via PublicOnlyRoute
     } catch (err: any) {
-      setError("البريد الإلكتروني أو كلمة المرور غير صحيحة");
+      setError(t('login.error'));
       setLoading(false);
     }
   };
@@ -41,8 +43,8 @@ export default function LoginPage() {
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div className="space-y-1">
-            <CardTitle className="text-2xl font-bold text-primary">تسجيل الدخول</CardTitle>
-            <CardDescription>أهلاً بك مجدداً في بوابة العملاء</CardDescription>
+            <CardTitle className="text-2xl font-bold text-primary">{t('login.title')}</CardTitle>
+            <CardDescription>{t('login.subtitle')}</CardDescription>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -54,7 +56,7 @@ export default function LoginPage() {
             )}
             
             <div className="space-y-2">
-              <Label htmlFor="email">البريد الإلكتروني</Label>
+              <Label htmlFor="email">{t('login.emailLabel')}</Label>
               <div className="relative">
                 <Mail className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -71,8 +73,8 @@ export default function LoginPage() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">كلمة المرور</Label>
-                <Link href="#" className="text-xs text-primary hover:underline">نسيت كلمة المرور؟</Link>
+                <Label htmlFor="password">{t('login.passwordLabel')}</Label>
+                <Link href="#" className="text-xs text-primary hover:underline">{t('login.forgotPassword')}</Link>
               </div>
               <div className="relative">
                 <Lock className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -89,10 +91,10 @@ export default function LoginPage() {
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "دخول"}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('login.submit')}
             </Button>
             <div className="text-sm text-center text-muted-foreground">
-              ليس لديك حساب؟ <Link href="/register" className="text-secondary font-semibold hover:underline">سجل الآن</Link>
+              {t('login.noAccount')} <Link href="/register" className="text-secondary font-semibold hover:underline">{t('login.registerNow')}</Link>
             </div>
           </CardFooter>
         </form>

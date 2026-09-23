@@ -14,22 +14,24 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useLanguage } from "@/lib/i18n/context";
 
-function timeAgo(iso?: string | null) {
+function timeAgo(iso: string | null | undefined, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (!iso) return "";
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "الآن";
-  if (minutes < 60) return `منذ ${minutes} دقيقة`;
+  if (minutes < 1) return t("notifications.timeAgoNow");
+  if (minutes < 60) return t("notifications.timeAgoMinutes", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `منذ ${hours} ساعة`;
+  if (hours < 24) return t("notifications.timeAgoHours", { count: hours });
   const days = Math.floor(hours / 24);
-  return `منذ ${days} يوم`;
+  return t("notifications.timeAgoDays", { count: days });
 }
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { t, dir } = useLanguage();
   const { data, isLoading } = useListNotifications({
     query: { queryKey: getListNotificationsQueryKey(), refetchInterval: 30000 },
   });
@@ -70,16 +72,16 @@ export function NotificationBell() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 p-0">
-        <div dir="rtl">
+        <div dir={dir}>
           <div className="flex items-center justify-between px-3 py-2 border-b">
-            <span className="font-bold text-sm text-primary">الإشعارات</span>
+            <span className="font-bold text-sm text-primary">{t("notifications.title")}</span>
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAll}
                 className="text-xs text-secondary hover:underline flex items-center gap-1"
                 disabled={markAllRead.isPending}
               >
-                <CheckCheck className="w-3.5 h-3.5" /> تعليم الكل كمقروء
+                <CheckCheck className="w-3.5 h-3.5" /> {t("notifications.markAllRead")}
               </button>
             )}
           </div>
@@ -89,7 +91,7 @@ export function NotificationBell() {
                 <Loader2 className="w-5 h-5 animate-spin text-secondary" />
               </div>
             ) : notifications.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">لا توجد إشعارات بعد</p>
+              <p className="text-sm text-muted-foreground text-center py-8">{t("notifications.empty")}</p>
             ) : (
               notifications.map((n) => (
                 <button
@@ -102,7 +104,7 @@ export function NotificationBell() {
                     <div className={!n.read ? "" : "pr-4"}>
                       <p className="text-sm font-medium text-primary">{n.title}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{n.message}</p>
-                      <p className="text-[10px] text-muted-foreground/70 mt-1">{timeAgo(n.created_at)}</p>
+                      <p className="text-[10px] text-muted-foreground/70 mt-1">{timeAgo(n.created_at, t)}</p>
                     </div>
                   </div>
                 </button>

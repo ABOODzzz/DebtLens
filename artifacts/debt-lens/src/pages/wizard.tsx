@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
+import { useLanguage } from "@/lib/i18n/context";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
@@ -19,6 +20,7 @@ const TOTAL_STEPS = 3;
 
 export default function WizardPage() {
   const { user, profile } = useAuth();
+  const { t, language, dir } = useLanguage();
   const [, setLocation] = useLocation();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -135,7 +137,7 @@ export default function WizardPage() {
       setStep(2);
     } catch (error) {
       console.error("KYC submission failed", error);
-      setKycError("تعذر إتمام التحقق من الهوية. يرجى المحاولة مرة أخرى.");
+      setKycError(t("wizard.identity.error"));
     } finally {
       setLoading(false);
     }
@@ -184,7 +186,7 @@ export default function WizardPage() {
     const reviewReason = kycResult?.reviewReason;
 
     return (
-      <div className="flex-1 container max-w-2xl mx-auto py-12 px-4">
+      <div dir={dir} className="flex-1 container max-w-2xl mx-auto py-12 px-4">
         <Card className="glass-card text-center py-12">
           <CardContent className="space-y-6 flex flex-col items-center">
             {reviewStatus === "approved" ? (
@@ -204,22 +206,22 @@ export default function WizardPage() {
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-primary">
                 {reviewStatus === "approved"
-                  ? "تم قبول ملفك بنجاح!"
+                  ? t("wizard.completion.approvedTitle")
                   : reviewStatus === "rejected"
-                    ? "نأسف، تم رفض طلبك"
-                    : "جاري مراجعة ملفك"}
+                    ? t("wizard.completion.rejectedTitle")
+                    : t("wizard.completion.pendingTitle")}
               </h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 {reviewStatus === "approved"
-                  ? "أهلاً بك في DebtLens. يمكنك الآن الاستفادة من جميع خدماتنا لتبسيط وإدارة ديونك."
+                  ? t("wizard.completion.approvedMessage")
                   : reviewStatus === "rejected"
-                    ? reviewReason || "لم يستوف الملف الشروط المطلوبة."
-                    : "يقوم فريقنا بمراجعة مستنداتك وتفاصيلك المالية. ستتلقى إشعاراً فور الانتهاء."}
+                    ? reviewReason || t("wizard.completion.rejectedMessage")
+                    : t("wizard.completion.pendingMessage")}
               </p>
             </div>
 
             <Button onClick={() => setLocation("/dashboard")} size="lg" className="mt-4">
-              الانتقال للوحة التحكم
+              {t("wizard.completion.dashboard")}
             </Button>
           </CardContent>
         </Card>
@@ -228,7 +230,7 @@ export default function WizardPage() {
   }
 
   return (
-    <div className="flex-1 bg-muted/30 py-12 px-4">
+    <div dir={dir} className="flex-1 bg-muted/30 py-12 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Progress Bar */}
         <div className="flex items-center justify-between mb-8 relative">
@@ -253,14 +255,14 @@ export default function WizardPage() {
         <Card className="glass-card border-none shadow-xl">
           <CardHeader className="bg-primary text-primary-foreground rounded-t-xl">
             <CardTitle className="text-xl">
-              {step === 1 && "التحقق من الهوية (KYC)"}
-              {step === 2 && "المعلومات المالية والبنكية"}
-              {step === 3 && "سجل الديون والالتزامات"}
+                {step === 1 && t("wizard.steps.identityTitle")}
+                {step === 2 && t("wizard.steps.financialTitle")}
+                {step === 3 && t("wizard.steps.debtTitle")}
             </CardTitle>
             <CardDescription className="text-primary-foreground/80">
-              {step === 1 && "خطوة أولى لتأمين حسابك والتحقق من هويتك عبر الذكاء الاصطناعي."}
-              {step === 2 && "لنفهم مصادر دخلك وحساباتك البنكية."}
-              {step === 3 && "قم بإضافة جميع قروضك والتزاماتك الحالية بدقة للحصول على أفضل خطة."}
+              {step === 1 && t("wizard.steps.identityDescription")}
+              {step === 2 && t("wizard.steps.financialDescription")}
+              {step === 3 && t("wizard.steps.debtDescription")}
             </CardDescription>
           </CardHeader>
 
@@ -275,39 +277,38 @@ export default function WizardPage() {
                 <div className="flex items-start gap-3 bg-primary/5 border border-primary/10 rounded-lg p-4">
                   <ShieldCheck className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-muted-foreground">
-                    يقوم نظام الذكاء الاصطناعي لدينا بمطابقة صورتك الشخصية مع بطاقة الهوية والتحقق من البيانات فوراً --
-                    وقد تتم الموافقة على حسابك تلقائياً دون الحاجة لانتظار مراجعة يدوية.
+                    {t("wizard.identity.privacy")}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label htmlFor="legalName">الاسم القانوني الكامل</Label>
+                    <Label htmlFor="legalName">{t("wizard.identity.legalName")}</Label>
                     <Input
                       id="legalName"
                       value={legalName}
                       onChange={(e) => setLegalName(e.target.value)}
-                      placeholder="كما هو في الهوية الشخصية"
+                      placeholder={t("wizard.identity.legalNamePlaceholder")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="nationalId">الرقم الوطني (اختياري)</Label>
+                    <Label htmlFor="nationalId">{t("wizard.identity.nationalId")}</Label>
                     <Input
                       id="nationalId"
                       value={nationalId}
                       onChange={(e) => setNationalId(e.target.value)}
-                      placeholder="10 أرقام"
+                      placeholder={t("wizard.identity.nationalIdPlaceholder")}
                       className="dir-ltr text-left"
                     />
                   </div>
                 </div>
 
                 <div className="pt-4 border-t space-y-6">
-                  <h4 className="font-semibold text-primary">المستندات المطلوبة</h4>
+                  <h4 className="font-semibold text-primary">{t("wizard.identity.documents")}</h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <FileUpload id="idFront" label="صورة الهوية (الوجه الأمامي)" onFileSelect={(f) => setIdFront(f)} />
-                    <FileUpload id="idBack" label="صورة الهوية (الوجه الخلفي)" onFileSelect={(f) => setIdBack(f)} />
-                    <FileUpload id="selfie" label="صورة شخصية (Selfie)" onFileSelect={(f) => setSelfie(f)} />
+                    <FileUpload id="idFront" label={t("wizard.identity.idFront")} onFileSelect={(f) => setIdFront(f)} />
+                    <FileUpload id="idBack" label={t("wizard.identity.idBack")} onFileSelect={(f) => setIdBack(f)} />
+                    <FileUpload id="selfie" label={t("wizard.identity.selfie")} onFileSelect={(f) => setSelfie(f)} />
                   </div>
                 </div>
               </div>
@@ -323,8 +324,8 @@ export default function WizardPage() {
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
                       <Building2 className="w-5 h-5" />
                     </div>
-                    <h3 className="font-bold text-primary">لدي حساب بنكي</h3>
-                    <p className="text-xs text-muted-foreground mt-1">يتم تحويل راتبي أو دخلي إلى بنك معتمد</p>
+                     <h3 className="font-bold text-primary">{t("wizard.financial.bankYes")}</h3>
+                     <p className="text-xs text-muted-foreground mt-1">{t("wizard.financial.bankYesDescription")}</p>
                   </div>
                   <div
                     onClick={() => setHasBankAccount(false)}
@@ -333,14 +334,14 @@ export default function WizardPage() {
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
                       <Briefcase className="w-5 h-5" />
                     </div>
-                    <h3 className="font-bold text-primary">ليس لدي حساب بنكي</h3>
-                    <p className="text-xs text-muted-foreground mt-1">أستلم راتبي نقداً أو عبر المحافظ الإلكترونية</p>
+                     <h3 className="font-bold text-primary">{t("wizard.financial.bankNo")}</h3>
+                     <p className="text-xs text-muted-foreground mt-1">{t("wizard.financial.bankNoDescription")}</p>
                   </div>
                 </div>
 
                 {hasBankAccount === true && (
                   <div className="space-y-6">
-                    <h4 className="font-semibold border-b pb-2">تفاصيل الحسابات البنكية</h4>
+                     <h4 className="font-semibold border-b pb-2">{t("wizard.financial.accounts")}</h4>
                     {bankAccounts.map((acc, index) => (
                       <div key={index} className="p-4 bg-muted/30 rounded-lg border relative">
                         {index > 0 && (
@@ -350,7 +351,7 @@ export default function WizardPage() {
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                           <div className="space-y-2">
-                            <Label>البنك</Label>
+                             <Label>{t("wizard.financial.bank")}</Label>
                             <Select
                               value={acc.bankName}
                               onValueChange={(val) => {
@@ -360,17 +361,17 @@ export default function WizardPage() {
                               }}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="اختر البنك" />
+                               <SelectValue placeholder={t("wizard.financial.bankPlaceholder")} />
                               </SelectTrigger>
                               <SelectContent>
-                                {banks.map((bank) => (
-                                  <SelectItem key={bank.ar} value={bank.ar}>{bank.ar}</SelectItem>
+                                 {banks.map((bank) => (
+                                   <SelectItem key={bank.ar} value={bank.ar}>{bank[language]}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label>رقم الحساب / IBAN</Label>
+                             <Label>{t("wizard.financial.accountNumber")}</Label>
                             <Input
                               value={acc.accountNumber}
                               onChange={(e) => {
@@ -378,7 +379,7 @@ export default function WizardPage() {
                                 newAccs[index].accountNumber = e.target.value;
                                 setBankAccounts(newAccs);
                               }}
-                              placeholder="مثال: JO12..."
+                               placeholder={t("wizard.financial.accountPlaceholder")}
                               className="dir-ltr text-left"
                             />
                           </div>
@@ -394,35 +395,35 @@ export default function WizardPage() {
                             }}
                             className="rounded border-primary text-primary focus:ring-secondary"
                           />
-                          هذا هو حساب الراتب الرئيسي
+                           {t("wizard.financial.salaryAccount")}
                         </label>
                       </div>
                     ))}
                     <Button type="button" variant="outline" onClick={handleAddBankAccount} className="w-full border-dashed border-2 gap-2 text-primary hover:text-primary">
-                      <Plus className="w-4 h-4" /> إضافة حساب بنكي آخر
+                       <Plus className="w-4 h-4" /> {t("wizard.financial.addBank")}
                     </Button>
 
                     <div className="pt-2 border-t space-y-4">
-                      <h4 className="font-semibold border-b pb-2">جهة العمل</h4>
+                       <h4 className="font-semibold border-b pb-2">{t("wizard.financial.employer")}</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>وين بتشتغل؟</Label>
+                           <Label>{t("wizard.financial.employerQuestion")}</Label>
                           <Input
                             value={employerName}
                             onChange={(e) => setEmployerName(e.target.value)}
-                            placeholder="اسم الشركة أو المنشأة"
+                             placeholder={t("wizard.financial.employerPlaceholder")}
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label>نوع التوظيف</Label>
+                           <Label>{t("wizard.financial.employmentType")}</Label>
                           <Select value={employmentType} onValueChange={(val: any) => setEmploymentType(val)}>
                             <SelectTrigger>
-                              <SelectValue placeholder="اختر النوع" />
+                               <SelectValue placeholder={t("wizard.financial.employmentPlaceholder")} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="permanent">عقد دائم</SelectItem>
-                              <SelectItem value="temporary">عقد مؤقت / مياومة</SelectItem>
-                              <SelectItem value="unemployed">غير موظف / عمل حر</SelectItem>
+                               <SelectItem value="permanent">{t("wizard.financial.permanent")}</SelectItem>
+                               <SelectItem value="temporary">{t("wizard.financial.temporary")}</SelectItem>
+                               <SelectItem value="unemployed">{t("wizard.financial.unemployed")}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -430,19 +431,19 @@ export default function WizardPage() {
                     </div>
 
                     <div className="pt-2 border-t space-y-3">
-                      <Label>هل أنت مسجل كضامن لأي جهة تمويل حالياً؟</Label>
+                       <Label>{t("wizard.financial.guarantorQuestion")}</Label>
                       <div className="grid grid-cols-2 gap-4">
                         <div
                           onClick={() => setIsRegisteredGuarantor(true)}
                           className={`p-3 text-center border-2 rounded-lg cursor-pointer transition-all ${isRegisteredGuarantor === true ? "border-secondary bg-secondary/5 shadow-md" : "border-border hover:border-primary/30"}`}
                         >
-                          نعم
+                           {t("wizard.financial.yes")}
                         </div>
                         <div
                           onClick={() => setIsRegisteredGuarantor(false)}
                           className={`p-3 text-center border-2 rounded-lg cursor-pointer transition-all ${isRegisteredGuarantor === false ? "border-secondary bg-secondary/5 shadow-md" : "border-border hover:border-primary/30"}`}
                         >
-                          لا
+                           {t("wizard.financial.no")}
                         </div>
                       </div>
                     </div>
@@ -451,37 +452,37 @@ export default function WizardPage() {
 
                 {hasBankAccount === false && (
                   <div className="space-y-6">
-                    <h4 className="font-semibold border-b pb-2">تفاصيل الدخل والعمل</h4>
+                     <h4 className="font-semibold border-b pb-2">{t("wizard.financial.incomeDetails")}</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>الدخل الشهري (دينار أردني)</Label>
+                       <Label>{t("wizard.financial.monthlyIncome")}</Label>
                         <Input
                           type="number"
                           value={monthlyIncome}
                           onChange={(e) => setMonthlyIncome(e.target.value)}
-                          placeholder="مثال: 500"
+                           placeholder={t("wizard.financial.incomePlaceholder")}
                           min="0"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>نوع التوظيف</Label>
+                         <Label>{t("wizard.financial.employmentType")}</Label>
                         <Select value={employmentType} onValueChange={(val: any) => setEmploymentType(val)}>
                           <SelectTrigger>
-                            <SelectValue placeholder="اختر النوع" />
+                             <SelectValue placeholder={t("wizard.financial.employmentPlaceholder")} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="permanent">عقد دائم</SelectItem>
-                            <SelectItem value="temporary">عقد مؤقت / مياومة</SelectItem>
-                            <SelectItem value="unemployed">غير موظف / عمل حر</SelectItem>
+                               <SelectItem value="permanent">{t("wizard.financial.permanent")}</SelectItem>
+                               <SelectItem value="temporary">{t("wizard.financial.temporary")}</SelectItem>
+                               <SelectItem value="unemployed">{t("wizard.financial.unemployed")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2 md:col-span-2">
-                        <Label>اسم جهة العمل (اختياري)</Label>
+                         <Label>{t("wizard.financial.employerOptional")}</Label>
                         <Input
                           value={employerName}
                           onChange={(e) => setEmployerName(e.target.value)}
-                          placeholder="اسم الشركة أو المنشأة"
+                           placeholder={t("wizard.financial.employerPlaceholder")}
                         />
                       </div>
                     </div>
@@ -492,7 +493,7 @@ export default function WizardPage() {
                         onChange={(e) => setHasOwnBusiness(e.target.checked)}
                         className="rounded border-primary text-primary focus:ring-secondary"
                       />
-                      لدي عملي التجاري الخاص (صاحب مصلحة)
+                       {t("wizard.financial.ownBusiness")}
                     </label>
                   </div>
                 )}
@@ -505,17 +506,17 @@ export default function WizardPage() {
                   <div className="flex gap-3">
                     <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="font-semibold text-primary">الشفافية هي مفتاح الحل</h4>
-                      <p className="text-sm text-muted-foreground mt-1">يضمن إدراج جميع ديونك (القروض البنكية، تمويل الشركات، بطاقات الائتمان) حصولك على خطة توحيد دقيقة تناسب وضعك الفعلي.</p>
+                       <h4 className="font-semibold text-primary">{t("wizard.debts.transparencyTitle")}</h4>
+                       <p className="text-sm text-muted-foreground mt-1">{t("wizard.debts.transparencyDescription")}</p>
                     </div>
                   </div>
                 </div>
 
                 {debts.length === 0 ? (
                   <div className="text-center py-8 border-2 border-dashed rounded-xl border-border bg-muted/20">
-                    <p className="text-muted-foreground mb-4">ليس لديك ديون مضافة بعد.</p>
+                     <p className="text-muted-foreground mb-4">{t("wizard.debts.empty")}</p>
                     <Button onClick={handleAddDebt} variant="outline" className="border-secondary text-primary hover:bg-secondary/10">
-                      <Plus className="w-4 h-4 mr-2" /> إضافة دين / التزام
+                       <Plus className="w-4 h-4 mr-2" /> {t("wizard.debts.add")}
                     </Button>
                   </div>
                 ) : (
@@ -527,7 +528,7 @@ export default function WizardPage() {
                         </Button>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
                           <div className="space-y-2">
-                            <Label>الجهة المانحة</Label>
+                             <Label>{t("wizard.debts.lender")}</Label>
                             <Select
                               value={debt.lenderName}
                               onValueChange={(val) => {
@@ -537,17 +538,17 @@ export default function WizardPage() {
                               }}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="اختر الجهة" />
+                               <SelectValue placeholder={t("wizard.debts.lenderPlaceholder")} />
                               </SelectTrigger>
                               <SelectContent>
-                                {allLenders.map((lender) => (
-                                  <SelectItem key={lender.ar} value={lender.ar}>{lender.ar}</SelectItem>
+                                 {allLenders.map((lender) => (
+                                   <SelectItem key={lender.ar} value={lender.ar}>{lender[language]}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label>المبلغ المتبقي (دينار)</Label>
+                             <Label>{t("wizard.debts.remaining")}</Label>
                             <Input
                               type="number"
                               value={debt.remainingAmount}
@@ -561,7 +562,7 @@ export default function WizardPage() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>تاريخ البداية (تقريبي)</Label>
+                             <Label>{t("wizard.debts.startDate")}</Label>
                             <Input
                               type="month"
                               value={debt.startDate}
@@ -577,7 +578,7 @@ export default function WizardPage() {
                       </div>
                     ))}
                     <Button type="button" variant="outline" onClick={handleAddDebt} className="w-full border-dashed border-2 gap-2 text-primary hover:text-primary mt-4">
-                      <Plus className="w-4 h-4" /> إضافة التزام آخر
+                       <Plus className="w-4 h-4" /> {t("wizard.debts.addAnother")}
                     </Button>
                   </div>
                 )}
@@ -591,7 +592,7 @@ export default function WizardPage() {
               onClick={() => setStep(step - 1)}
               disabled={step === 1 || loading}
             >
-              السابق
+              {t("wizard.navigation.previous")}
             </Button>
 
             {step === 1 && (
@@ -600,7 +601,7 @@ export default function WizardPage() {
                 disabled={!validateStep1() || loading}
                 className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-8 min-w-[120px]"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "التالي"}
+                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : t("wizard.navigation.next")}
               </Button>
             )}
 
@@ -610,7 +611,7 @@ export default function WizardPage() {
                 disabled={!validateStep2()}
                 className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-8"
               >
-                التالي
+                {t("wizard.navigation.next")}
               </Button>
             )}
 
@@ -620,7 +621,7 @@ export default function WizardPage() {
                 disabled={!validateStep3() || loading}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 min-w-[120px]"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "إرسال للمراجعة"}
+                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : t("wizard.navigation.submit")}
               </Button>
             )}
           </CardFooter>

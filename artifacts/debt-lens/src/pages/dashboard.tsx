@@ -10,9 +10,11 @@ import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, L
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/lib/i18n/context";
 
 export default function DashboardPage() {
   const { profile } = useAuth();
+  const { t } = useLanguage();
   
   // Status check
   if (profile?.reviewStatus === "pending") {
@@ -20,8 +22,8 @@ export default function DashboardPage() {
       <div className="flex-1 container mx-auto p-4 md:p-8 max-w-3xl flex items-center justify-center">
         <Card className="glass-card text-center py-16 px-8 w-full border-secondary/20">
           <Loader2 className="w-16 h-16 animate-spin text-secondary mx-auto mb-6" />
-          <h2 className="text-2xl font-bold text-primary mb-2">جاري مراجعة ملفك</h2>
-          <p className="text-muted-foreground">يقوم خبراؤنا بمراجعة مستنداتك وبياناتك المالية. هذه العملية تستغرق وقتاً قصيراً لضمان تقديم أفضل الاستشارات المخصصة لك.</p>
+          <h2 className="text-2xl font-bold text-primary mb-2">{t("dashboard.review.pending")}</h2>
+          <p className="text-muted-foreground">{t("dashboard.review.pendingBody")}</p>
         </Card>
       </div>
     );
@@ -32,9 +34,9 @@ export default function DashboardPage() {
       <div className="flex-1 container mx-auto p-4 md:p-8 max-w-3xl flex items-center justify-center">
         <Card className="border-destructive/20 text-center py-16 px-8 w-full bg-destructive/5">
           <ShieldAlert className="w-16 h-16 text-destructive mx-auto mb-6" />
-          <h2 className="text-2xl font-bold text-destructive mb-2">تم رفض الملف</h2>
-          <p className="text-muted-foreground mb-4">السبب: {profile.reviewReason || "المستندات غير مطابقة للشروط"}</p>
-          <Button variant="outline" onClick={() => window.location.href="/wizard"}>إعادة التقديم</Button>
+          <h2 className="text-2xl font-bold text-destructive mb-2">{t("dashboard.review.rejected")}</h2>
+          <p className="text-muted-foreground mb-4">{t("dashboard.application.reason")}: {profile.reviewReason || t("dashboard.review.defaultReason")}</p>
+          <Button variant="outline" onClick={() => window.location.href="/wizard"}>{t("dashboard.review.resubmit")}</Button>
         </Card>
       </div>
     );
@@ -46,6 +48,7 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { profile } = useAuth();
+  const { t, language } = useLanguage();
   const summaryQuery = useGetFinancialSummary();
   const guarantorQuery = useGetGuarantorNetwork();
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
@@ -62,7 +65,7 @@ function DashboardContent() {
     return (
       <div className="p-8 text-center text-destructive">
         <AlertCircle className="w-12 h-12 mx-auto mb-4" />
-        <p>حدث خطأ أثناء تحميل بياناتك المالية.</p>
+        <p>{t("dashboard.error.financial")}</p>
       </div>
     );
   }
@@ -77,18 +80,18 @@ function DashboardContent() {
         <div className="container mx-auto max-w-6xl flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
             <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <h1 className="text-3xl font-bold">أهلاً بك، {profile?.fullName?.split(' ')[0] || 'عميلنا العزيز'}</h1>
+              <h1 className="text-3xl font-bold">{t("dashboard.welcome.greeting", { name: profile?.fullName?.split(' ')[0] || t("dashboard.welcome.customer") })}</h1>
               {profile?.reviewStatus === 'approved' && (
                 <span className="inline-flex items-center gap-1 bg-secondary/20 text-secondary text-sm font-medium px-3 py-1 rounded-full">
-                  <BadgeCheck className="w-4 h-4" /> حساب موثّق
+                  <BadgeCheck className="w-4 h-4" /> {t("dashboard.welcome.verified")}
                 </span>
               )}
             </div>
-            <p className="text-primary-foreground/80">إليك ملخص وضعك المالي بناءً على البيانات المقدمة.</p>
+            <p className="text-primary-foreground/80">{t("dashboard.welcome.summary")}</p>
           </div>
           <div className="bg-primary-foreground/10 px-6 py-4 rounded-xl backdrop-blur-sm border border-primary-foreground/20 text-center min-w-[200px]">
-            <p className="text-sm opacity-80 mb-1">إجمالي الديون المتبقية</p>
-            <p className="text-3xl font-bold text-secondary">{summary.totalRemainingDebt.toLocaleString()} <span className="text-lg">د.أ</span></p>
+            <p className="text-sm opacity-80 mb-1">{t("dashboard.welcome.debtTotal")}</p>
+            <p className="text-3xl font-bold text-secondary">{summary.totalRemainingDebt.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} <span className="text-lg">{t("common.currency")}</span></p>
           </div>
         </div>
       </div>
@@ -99,17 +102,17 @@ function DashboardContent() {
           <div className="flex items-start gap-3 bg-secondary/10 border border-secondary/30 rounded-lg p-4 text-sm">
             <AlertCircle className="w-5 h-5 text-secondary flex-shrink-0 mt-0.5" />
             <p className="text-muted-foreground">
-              الأرقام أدناه مبنية على بياناتك المُدخلة عند التسجيل فقط. ستظهر أرقام دقيقة بعد رفع كشوفات حساباتك أو قروضك ومراجعتها.
+              {t("dashboard.welcome.unverified")}
             </p>
           </div>
         )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard title="الدخل الشهري" value={summary.totalMonthlyIncome} unit="د.أ" />
-          <KpiCard title="الالتزامات الشهرية" value={summary.totalMonthlyDebtPayments} unit="د.أ" highlight={summary.totalMonthlyDebtPayments > summary.totalMonthlyIncome * 0.5} />
-          <KpiCard title="نسبة عبء الدين" value={Math.round(summary.debtToIncomeRatio)} unit="%" highlight={summary.debtToIncomeRatio > 50} />
-          <KpiCard title="عدد القروض النشطة" value={summary.activeLoansCount} unit="" isNumber />
+          <KpiCard title={t("dashboard.kpi.income")} value={summary.totalMonthlyIncome} unit={t("common.currency")} />
+          <KpiCard title={t("dashboard.kpi.payments")} value={summary.totalMonthlyDebtPayments} unit={t("common.currency")} highlight={summary.totalMonthlyDebtPayments > summary.totalMonthlyIncome * 0.5} />
+          <KpiCard title={t("dashboard.kpi.ratio")} value={Math.round(summary.debtToIncomeRatio)} unit="%" highlight={summary.debtToIncomeRatio > 50} />
+          <KpiCard title={t("dashboard.kpi.loans")} value={summary.activeLoansCount} unit="" isNumber />
         </div>
 
         <LoanApplicationCard guarantorNetwork={guarantorQuery.data} />
@@ -120,29 +123,29 @@ function DashboardContent() {
           isError={guarantorQuery.isError}
         />
 
-        <h2 className="text-xl font-bold text-primary border-b pb-2">الخدمات الاستشارية المتاحة لك</h2>
+        <h2 className="text-xl font-bold text-primary border-b pb-2">{t("dashboard.services.heading")}</h2>
         
         {/* Services Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
           <ServiceCard 
-            title="تحليل شامل للبيانات" 
-            description="دراسة مفصلة لوضعك المالي وتوزيع ديونك عبر الجهات المختلفة."
+            title={t("dashboard.services.analysis.title")} 
+            description={t("dashboard.services.analysis.description")}
             icon={<PieChart className="w-6 h-6" />}
             onClick={() => setActiveDialog('full-analysis')}
           />
           
           <ServiceCard 
-            title="نصائح الذكاء الاصطناعي" 
-            description="نصائح مالية مخصصة مبنية على خوارزمياتنا لتحسين تصنيفك الائتماني."
+            title={t("dashboard.services.advice.title")} 
+            description={t("dashboard.services.advice.description")}
             icon={<Sparkles className="w-6 h-6 text-secondary" />}
             onClick={() => setActiveDialog('ai-advice')}
           />
 
           {summary.hasActiveLoans && (
             <ServiceCard 
-              title="خطط إعادة الهيكلة" 
-              description="سيناريوهات مقترحة لتقليل القسط الشهري وتقليص فترة السداد."
+              title={t("dashboard.services.restructure.title")} 
+              description={t("dashboard.services.restructure.description")}
               icon={<ArrowRightLeft className="w-6 h-6" />}
               onClick={() => setActiveDialog('restructure')}
             />
@@ -150,16 +153,16 @@ function DashboardContent() {
 
           {summary.hasMultipleFinancingInstitutions && (
             <ServiceCard 
-              title="طلب توحيد القروض" 
-              description="جمع كافة ديونك من المؤسسات المختلفة في قرض واحد بقسط مريح."
+              title={t("dashboard.services.consolidation.title")} 
+              description={t("dashboard.services.consolidation.description")}
               icon={<Building className="w-6 h-6" />}
               onClick={() => setActiveDialog('consolidation')}
             />
           )}
           
           <ServiceCard 
-            title="تقييم أهلية التمويل" 
-            description="فحص سريع لمدى أهليتك للحصول على تمويل إضافي دون الإضرار بوضعك المالي."
+            title={t("dashboard.services.eligibility.title")} 
+            description={t("dashboard.services.eligibility.description")}
             icon={<LineChart className="w-6 h-6" />}
             onClick={() => setActiveDialog('eligibility')}
           />
@@ -177,13 +180,13 @@ function DashboardContent() {
 }
 
 // --- Loan Application Card & Wizard ---
-function loanApplicationStatusLabel(status: string) {
+function loanApplicationStatusLabel(status: string, t: (key: string) => string) {
   switch (status) {
-    case 'submitted': return 'تم الإرسال، قيد المراجعة النهائية';
-    case 'awaiting_guarantor': return 'بانتظار كفيل رقمي';
-    case 'approved': return 'تمت الموافقة النهائية';
-    case 'admin_rejected': return 'رُفض بعد المراجعة النهائية';
-    case 'rejected': return 'غير مؤهل حالياً';
+    case 'submitted': return t("dashboard.status.submitted");
+    case 'awaiting_guarantor': return t("dashboard.status.awaiting");
+    case 'approved': return t("dashboard.status.approved");
+    case 'admin_rejected': return t("dashboard.status.adminRejected");
+    case 'rejected': return t("dashboard.status.rejected");
     default: return status;
   }
 }
@@ -200,6 +203,7 @@ function loanApplicationStatusClass(status: string) {
 }
 
 function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: GuarantorNetwork }) {
+  const { t, language } = useLanguage();
   const applicationQuery = useGetCurrentLoanApplication();
   const [wizardOpen, setWizardOpen] = useState(false);
 
@@ -226,12 +230,12 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
                 <Wallet className="w-7 h-7" />
               </div>
               <div>
-                <h3 className="font-bold text-xl text-primary mb-1">جاهز لتمويل جديد؟</h3>
-                <p className="text-sm text-muted-foreground">قدّم طلبك الآن وسنقيّم أهليتك فوراً، وإذا احتجت كفيلاً رقمياً نساعدك تطلبه من نفس المكان.</p>
+                <h3 className="font-bold text-xl text-primary mb-1">{t("dashboard.application.ready")}</h3>
+                <p className="text-sm text-muted-foreground">{t("dashboard.application.readyBody")}</p>
               </div>
             </div>
             <Button size="lg" onClick={() => setWizardOpen(true)} className="shrink-0">
-              طلب تمويل جديد
+              {t("dashboard.application.new")}
             </Button>
           </CardContent>
         </Card>
@@ -245,20 +249,20 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
       <Card className="border-primary/20">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-secondary" /> طلب التمويل الأخير
+             <Wallet className="w-5 h-5 text-secondary" /> {t("dashboard.application.latest")}
           </CardTitle>
           <span className={`px-3 py-1 rounded-full text-xs font-medium ${loanApplicationStatusClass(application!.status)}`}>
-            {loanApplicationStatusLabel(application!.status)}
+            {loanApplicationStatusLabel(application!.status, t)}
           </span>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-muted-foreground">المبلغ المطلوب</p>
-              <p className="font-bold">{application!.requested_amount.toLocaleString()} د.أ</p>
+              <p className="text-muted-foreground">{t("dashboard.application.requested")}</p>
+              <p className="font-bold">{application!.requested_amount.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">الغرض</p>
+              <p className="text-muted-foreground">{t("dashboard.application.purpose")}</p>
               <p className="font-bold truncate">{application!.purpose}</p>
             </div>
           </div>
@@ -266,12 +270,12 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
           {(application!.status === 'submitted' || application!.status === 'approved') && application!.recommended_amount != null && (
             <div className="grid grid-cols-2 gap-4 text-sm p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
               <div>
-                <p className="opacity-80">المبلغ الموصى به</p>
-                <p className="font-bold">{application!.recommended_amount.toLocaleString()} د.أ</p>
+                <p className="opacity-80">{t("dashboard.application.recommended")}</p>
+                <p className="font-bold">{application!.recommended_amount.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
               </div>
               <div>
-                <p className="opacity-80">القسط الشهري</p>
-                <p className="font-bold">{application!.monthly_installment?.toLocaleString()} د.أ</p>
+                <p className="opacity-80">{t("dashboard.application.installment")}</p>
+                <p className="font-bold">{application!.monthly_installment?.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
               </div>
             </div>
           )}
@@ -284,12 +288,12 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
 
           {application!.status === 'admin_rejected' && application!.admin_decision_reason && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
-              سبب الرفض: {application!.admin_decision_reason}
+              {t("dashboard.application.reason")}: {application!.admin_decision_reason}
             </div>
           )}
 
           {(application!.status === 'rejected' || application!.status === 'admin_rejected') && (
-            <Button variant="outline" onClick={() => setWizardOpen(true)}>تقديم طلب جديد</Button>
+            <Button variant="outline" onClick={() => setWizardOpen(true)}>{t("dashboard.application.newRequest")}</Button>
           )}
         </CardContent>
       </Card>
@@ -299,6 +303,7 @@ function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: Guaranto
 }
 
 function InlineGuarantorRequest({ application, guarantorNetwork }: { application: LoanApplication; guarantorNetwork?: GuarantorNetwork }) {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const requestMutation = useRequestGuarantor();
@@ -312,10 +317,10 @@ function InlineGuarantorRequest({ application, guarantorNetwork }: { application
     return (
       <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm">
         <p className="text-blue-800">
-          طلب كفالة من <strong>{linkedRelationship.guarantor_name}</strong> — {guarantorStatusLabel(linkedRelationship.status)}
+          {t("dashboard.guarantor.request")}: <strong>{linkedRelationship.guarantor_name}</strong> — {guarantorStatusLabel(linkedRelationship.status, t)}
         </p>
         <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${guarantorStatusClass(linkedRelationship.status)}`}>
-          {guarantorStatusLabel(linkedRelationship.status)}
+          {guarantorStatusLabel(linkedRelationship.status, t)}
         </span>
       </div>
     );
@@ -325,15 +330,15 @@ function InlineGuarantorRequest({ application, guarantorNetwork }: { application
     if (!nationalId.trim()) return;
     try {
       const res = await requestMutation.mutateAsync({ data: { guarantor_national_id: nationalId.trim(), application_id: application.id } });
-      toast({ title: "تم إرسال الطلب", description: `تم إرسال طلب الكفالة إلى ${res.guarantor_name}.` });
+      toast({ title: t("dashboard.guarantor.requestSent"), description: t("dashboard.guarantor.requestSentTo", { name: res.guarantor_name }) });
       setNationalId("");
       queryClient.invalidateQueries({ queryKey: getGetGuarantorNetworkQueryKey() });
       queryClient.invalidateQueries({ queryKey: getGetCurrentLoanApplicationQueryKey() });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر إرسال الطلب",
-        description: error?.error || "لم نتمكن من العثور على هذا الشخص أو أنه غير مؤهل ليكون كفيلاً رقمياً.",
+        title: t("dashboard.guarantor.requestFailed"),
+        description: error?.error || t("dashboard.error.guarantor"),
       });
     }
   };
@@ -341,17 +346,17 @@ function InlineGuarantorRequest({ application, guarantorNetwork }: { application
   return (
     <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
       <p className="text-sm text-yellow-800">
-        طلبك يحتاج كفيلاً رقمياً لإتمام الموافقة. أدخل الرقم الوطني لشخص موثّق عندنا ليكون كفيلك.
+          {t("dashboard.guarantor.applicationNeed")}
       </p>
       <div className="flex gap-2">
         <Input
           dir="ltr"
-          placeholder="الرقم الوطني للكفيل"
+          placeholder={t("dashboard.guarantor.nationalId")}
           value={nationalId}
           onChange={(e) => setNationalId(e.target.value)}
         />
         <Button onClick={handleRequest} disabled={requestMutation.isPending || !nationalId.trim()}>
-          {requestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "طلب كفيل"}
+          {requestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t("dashboard.guarantor.request")}
         </Button>
       </div>
     </div>
@@ -359,6 +364,7 @@ function InlineGuarantorRequest({ application, guarantorNetwork }: { application
 }
 
 function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
+  const { t, language } = useLanguage();
   const queryClient = useQueryClient();
   const submitMutation = useSubmitLoanApplication();
   const [requestedAmount, setRequestedAmount] = useState("");
@@ -380,11 +386,11 @@ function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
   const result = submitMutation.data;
 
   return (
-    <DialogWrapper title="طلب تمويل جديد" isOpen={true} onClose={onClose}>
+    <DialogWrapper title={t("dashboard.application.new")} isOpen={true} onClose={onClose}>
       {!result && (
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="amount">المبلغ المطلوب (د.أ)</Label>
+            <Label htmlFor="amount">{t("dashboard.application.amountLabel", { currency: t("common.currency") })}</Label>
             <Input
               id="amount"
               type="number"
@@ -392,21 +398,21 @@ function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
               dir="ltr"
               value={requestedAmount}
               onChange={(e) => setRequestedAmount(e.target.value)}
-              placeholder="مثال: 1000"
+              placeholder={t("dashboard.application.amountPlaceholder")}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="purpose">الغرض من التمويل</Label>
+            <Label htmlFor="purpose">{t("dashboard.application.purposeLabel")}</Label>
             <Textarea
               id="purpose"
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
-              placeholder="مثال: تجديد المنزل، شراء سيارة، توسيع مشروعي الخاص..."
+              placeholder={t("dashboard.application.purposePlaceholder")}
               rows={3}
             />
           </div>
           {submitMutation.isError && (
-            <p className="text-destructive text-sm">حدث خطأ أثناء إرسال الطلب، الرجاء المحاولة مرة أخرى.</p>
+            <p className="text-destructive text-sm">{t("dashboard.error.submit")}</p>
           )}
           <Button
             className="w-full"
@@ -414,7 +420,7 @@ function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
             onClick={handleSubmit}
             disabled={submitMutation.isPending || !requestedAmount || !purpose.trim()}
           >
-            {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "إرسال الطلب"}
+            {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t("dashboard.application.send")}
           </Button>
         </div>
       )}
@@ -422,30 +428,30 @@ function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
       {result && (
         <div className="space-y-4">
           <div className={`p-6 rounded-xl border text-center ${result.status === 'submitted' ? 'bg-green-50 border-green-200 text-green-800' : result.status === 'awaiting_guarantor' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-destructive/5 border-destructive/20 text-destructive'}`}>
-            <h3 className="text-xl font-bold mb-2">{loanApplicationStatusLabel(result.status)}</h3>
+            <h3 className="text-xl font-bold mb-2">{loanApplicationStatusLabel(result.status, t)}</h3>
             <p className="opacity-90 text-sm leading-relaxed">{result.recommendation}</p>
           </div>
 
           {result.status === 'submitted' && result.recommended_amount != null && (
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="p-4 bg-muted/30 rounded-lg text-center border">
-                <p className="text-muted-foreground">المبلغ الموصى به</p>
-                <p className="text-xl font-bold text-primary">{result.recommended_amount.toLocaleString()} د.أ</p>
+                <p className="text-muted-foreground">{t("dashboard.application.recommended")}</p>
+                <p className="text-xl font-bold text-primary">{result.recommended_amount.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
               </div>
               <div className="p-4 bg-muted/30 rounded-lg text-center border">
-                <p className="text-muted-foreground">القسط الشهري</p>
-                <p className="text-xl font-bold text-secondary">{result.monthly_installment?.toLocaleString()} د.أ</p>
+                <p className="text-muted-foreground">{t("dashboard.application.installment")}</p>
+                <p className="text-xl font-bold text-secondary">{result.monthly_installment?.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
               </div>
             </div>
           )}
 
           {result.status === 'awaiting_guarantor' && (
             <p className="text-sm text-muted-foreground text-center">
-              أغلق هذه النافذة وستجد في بطاقة "طلب التمويل الأخير" خياراً لطلب كفيل رقمي يدعم طلبك.
+              {t("dashboard.application.guarantorNote")}
             </p>
           )}
 
-          <Button className="w-full" variant="outline" onClick={onClose}>إغلاق</Button>
+          <Button className="w-full" variant="outline" onClick={onClose}>{t("dashboard.application.close")}</Button>
         </div>
       )}
     </DialogWrapper>
@@ -453,13 +459,13 @@ function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
 }
 
 // --- Guarantor Status Card ---
-function guarantorStatusLabel(status: string) {
+function guarantorStatusLabel(status: string, t: (key: string) => string) {
   switch (status) {
-    case 'approved': return 'تمت الموافقة';
-    case 'awaiting_admin_review': return 'بانتظار موافقة الإدارة';
-    case 'declined': return 'رفض الكفيل';
-    case 'rejected': return 'رفضته الإدارة';
-    default: return 'قيد الانتظار';
+    case 'approved': return t("dashboard.status.approved");
+    case 'awaiting_admin_review': return t("dashboard.status.awaiting");
+    case 'declined': return t("dashboard.status.rejected");
+    case 'rejected': return t("dashboard.status.adminRejected");
+    default: return t("dashboard.status.awaiting");
   }
 }
 
@@ -474,6 +480,7 @@ function guarantorStatusClass(status: string) {
 }
 
 function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNetwork; isLoading: boolean; isError: boolean }) {
+  const { t, language } = useLanguage();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const requestMutation = useRequestGuarantor();
@@ -488,14 +495,14 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
     if (!nationalId.trim()) return;
     try {
       const res = await requestMutation.mutateAsync({ data: { guarantor_national_id: nationalId.trim() } });
-      toast({ title: "تم إرسال الطلب", description: `تم إرسال طلب الكفالة إلى ${res.guarantor_name}.` });
+      toast({ title: t("dashboard.guarantor.requestSent"), description: t("dashboard.guarantor.requestSentTo", { name: res.guarantor_name }) });
       setNationalId("");
       invalidateNetwork();
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر إرسال الطلب",
-        description: error?.error || "لم نتمكن من العثور على هذا الشخص أو أنه غير مؤهل ليكون كفيلاً رقمياً.",
+        title: t("dashboard.guarantor.requestFailed"),
+        description: error?.error || t("dashboard.error.guarantor"),
       });
     }
   };
@@ -506,7 +513,7 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
       await respondMutation.mutateAsync({ data: { relationship_id: relationshipId, approve } });
       invalidateNetwork();
     } catch (error) {
-      toast({ variant: "destructive", title: "تعذر تسجيل الرد", description: "يرجى المحاولة مرة أخرى." });
+      toast({ variant: "destructive", title: t("dashboard.guarantor.responseFailed"), description: t("dashboard.error.retry") });
     } finally {
       setRespondingId(null);
     }
@@ -531,32 +538,32 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-primary">الكفيل الرقمي</h3>
-            <p className="text-sm text-muted-foreground">اطلب من عميل موثّق أن يكفلك، أو راجع طلبات الكفالة الواردة إليك</p>
+            <h3 className="font-bold text-primary">{t("dashboard.guarantor.digital")}</h3>
+            <p className="text-sm text-muted-foreground">{t("dashboard.guarantor.intro")}</p>
           </div>
         </div>
 
         {/* Capacity summary */}
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="p-2.5 bg-background border rounded-lg">
-            <p className="text-muted-foreground mb-0.5">كفلاؤك</p>
+            <p className="text-muted-foreground mb-0.5">{t("dashboard.guarantor.yourGuarantors")}</p>
             <p className="font-bold text-primary">{requester_capacity.used_count} / {requester_capacity.max_count}</p>
           </div>
           <div className="p-2.5 bg-background border rounded-lg">
-            <p className="text-muted-foreground mb-0.5">من تكفلهم أنت</p>
-            <p className="font-bold text-primary">{guarantor_capacity.used_count} / {guarantor_capacity.max_count} (حتى {guarantor_capacity.max_amount.toLocaleString()} د.أ)</p>
+            <p className="text-muted-foreground mb-0.5">{t("dashboard.guarantor.guaranteed")}</p>
+            <p className="font-bold text-primary">{guarantor_capacity.used_count} / {guarantor_capacity.max_count} ({t("dashboard.guarantor.max", { amount: guarantor_capacity.max_amount.toLocaleString(language === "ar" ? "ar-JO" : "en-US"), currency: t("common.currency") })})</p>
           </div>
         </div>
 
         {pendingIncoming.length > 0 && (
           <div>
-            <p className="text-sm font-medium mb-2 flex items-center gap-2">
-              <Users className="w-4 h-4" /> طلبات كفالة واردة إليك
+              <p className="text-sm font-medium mb-2 flex items-center gap-2">
+               <Users className="w-4 h-4" /> {t("dashboard.guarantor.incoming")}
             </p>
             <div className="space-y-2">
               {pendingIncoming.map((request) => (
                 <div key={request.id} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm gap-2">
-                  <span className="truncate">{request.requester_name} (بحد أقصى {request.max_amount.toLocaleString()} د.أ)</span>
+                  <span className="truncate">{request.requester_name} ({t("dashboard.guarantor.maxAmount", { amount: request.max_amount.toLocaleString(language === "ar" ? "ar-JO" : "en-US"), currency: t("common.currency") })})</span>
                   <div className="flex gap-2 shrink-0">
                     <Button
                       size="sm"
@@ -585,18 +592,18 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
 
         {canRequestNewGuarantor && (
           <div className="p-3 bg-background border rounded-lg space-y-2">
-            <Label htmlFor="guarantor-national-id" className="text-sm font-medium">طلب كفيل رقمي جديد</Label>
+            <Label htmlFor="guarantor-national-id" className="text-sm font-medium">{t("dashboard.guarantor.newRequest")}</Label>
             <div className="flex gap-2">
               <Input
                 id="guarantor-national-id"
-                placeholder="الرقم الوطني للكفيل"
+                placeholder={t("dashboard.guarantor.nationalId")}
                 value={nationalId}
                 onChange={(e) => setNationalId(e.target.value)}
                 dir="ltr"
                 className="text-right"
               />
               <Button onClick={handleRequest} disabled={requestMutation.isPending || !nationalId.trim()} className="shrink-0">
-                {requestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "إرسال الطلب"}
+                {requestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t("dashboard.application.send")}
               </Button>
             </div>
           </div>
@@ -608,9 +615,9 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
             <div className="flex gap-1 mb-2 border-b">
               {(
                 [
-                  { key: "active", label: `نشطة (${activeRelationships.length})` },
-                  { key: "pending", label: `قيد الانتظار (${pendingOutgoing.length + pendingIncoming.length})` },
-                  { key: "closed", label: `مرفوضة/منتهية (${closedRelationships.length})` },
+                   { key: "active", label: t("dashboard.guarantor.active", { count: activeRelationships.length }) },
+                   { key: "pending", label: t("dashboard.guarantor.pending", { count: pendingOutgoing.length + pendingIncoming.length }) },
+                   { key: "closed", label: t("dashboard.guarantor.closed", { count: closedRelationships.length }) },
                 ] as const
               ).map((tab) => (
                 <button
@@ -638,7 +645,7 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
                 : historyTab === "pending"
                 ? [...pendingOutgoing, ...pendingIncoming]
                 : closedRelationships
-              ).length === 0 && <p className="text-xs text-muted-foreground py-3 text-center">لا توجد سجلات في هذه الفئة</p>}
+               ).length === 0 && <p className="text-xs text-muted-foreground py-3 text-center">{t("dashboard.guarantor.empty")}</p>}
             </div>
           </div>
         )}
@@ -649,19 +656,20 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorNet
 
 function GuarantorHistoryRow({ rel }: { rel: GuarantorRelationshipSummary }) {
   const { user } = useAuth();
+  const { t, language, dir } = useLanguage();
   const isRequesterMe = rel.requester_uid === user?.uid;
   const otherName = isRequesterMe ? rel.guarantor_name : rel.requester_name;
-  const roleLabel = isRequesterMe ? "كفيلك" : "تكفله أنت";
+  const roleLabel = isRequesterMe ? t("dashboard.guarantor.yourGuarantor") : t("dashboard.guarantor.youGuarantee");
   return (
     <div className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm gap-2">
       <div className="min-w-0">
         <p className="truncate">
           <span className="text-muted-foreground text-xs">{roleLabel}: </span>
-          {otherName} <span className="text-muted-foreground text-xs">({rel.max_amount.toLocaleString()} د.أ)</span>
+          {otherName} <span className="text-muted-foreground text-xs">({rel.max_amount.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")})</span>
         </p>
       </div>
       <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${guarantorStatusClass(rel.status)}`}>
-        {guarantorStatusLabel(rel.status)}
+        {guarantorStatusLabel(rel.status, t)}
       </span>
     </div>
   );
@@ -701,19 +709,22 @@ function ServiceCard({ title, description, icon, onClick }: { title: string, des
 // --- Dialogs (Fetching real data when opened) ---
 
 function AwaitingVerificationNotice({ message }: { message?: string }) {
+  const { t } = useLanguage();
   return (
     <div className="flex flex-col items-center text-center gap-3 py-6">
       <AlertCircle className="w-10 h-10 text-secondary" />
       <p className="text-muted-foreground leading-relaxed">
-        {message || "بياناتك المالية لا تزال قيد المراجعة والتحليل من قبل فريقنا. سنعلمك فور اكتمال التحليل لعرض نتائجك الدقيقة."}
+        {message || t("dashboard.dialogs.awaiting")}
       </p>
     </div>
   );
 }
 
-const DialogWrapper = ({ title, isOpen, onClose, children }: { title: string, isOpen: boolean, onClose: () => void, children: React.ReactNode }) => (
+const DialogWrapper = ({ title, isOpen, onClose, children }: { title: string, isOpen: boolean, onClose: () => void, children: React.ReactNode }) => {
+  const { dir } = useLanguage();
+  return (
   <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-    <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir="rtl">
+    <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir={dir}>
       <DialogHeader>
         <DialogTitle className="text-xl text-primary">{title}</DialogTitle>
       </DialogHeader>
@@ -722,9 +733,11 @@ const DialogWrapper = ({ title, isOpen, onClose, children }: { title: string, is
       </div>
     </DialogContent>
   </Dialog>
-);
+  );
+};
 
 function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
+  const { t, language } = useLanguage();
   const analysis = useAnalyzeFinances();
   
   // Auto-fetch on mount
@@ -733,9 +746,9 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DialogWrapper title="التحليل الشامل" isOpen={true} onClose={onClose}>
+    <DialogWrapper title={t("dashboard.dialogs.analysis")} isOpen={true} onClose={onClose}>
       {analysis.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
-       analysis.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       analysis.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        analysis.data?.awaitingVerification ? <AwaitingVerificationNotice message={analysis.data.message} /> :
        analysis.data && (
          <div className="space-y-6">
@@ -743,22 +756,22 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
            
            <div className="grid grid-cols-2 gap-4">
              <div className="p-4 bg-muted/30 rounded-lg">
-               <p className="text-sm text-muted-foreground">إجمالي الدين المتبقي</p>
-               <p className="text-xl font-bold">{(analysis.data.totalRemainingDebt ?? 0).toLocaleString()} د.أ</p>
+                <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.debtTotal")}</p>
+                <p className="text-xl font-bold">{(analysis.data.totalRemainingDebt ?? 0).toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
              </div>
              <div className="p-4 bg-muted/30 rounded-lg">
-               <p className="text-sm text-muted-foreground">نسبة العبء</p>
+                <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.burden")}</p>
                <p className="text-xl font-bold text-secondary">{Math.round(analysis.data.debtToIncomeRatio ?? 0)}%</p>
              </div>
            </div>
 
            <div>
-             <h4 className="font-bold mb-3">تفصيل الديون</h4>
+              <h4 className="font-bold mb-3">{t("dashboard.dialogs.breakdown")}</h4>
              <div className="space-y-2">
                {(analysis.data.debtBreakdown ?? []).map((d, i) => (
                  <div key={i} className="flex justify-between items-center p-3 border rounded">
                    <span>{d.lenderName}</span>
-                   <span className="font-bold">{d.remainingAmount.toLocaleString()} د.أ</span>
+                    <span className="font-bold">{d.remainingAmount.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</span>
                  </div>
                ))}
              </div>
@@ -766,7 +779,7 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
 
            {(analysis.data.insights ?? []).length > 0 && (
              <div>
-               <h4 className="font-bold mb-2">رؤى مالية</h4>
+                <h4 className="font-bold mb-2">{t("dashboard.dialogs.insights")}</h4>
                <ul className="list-disc list-inside space-y-1 text-muted-foreground pr-4">
                  {(analysis.data.insights ?? []).map((insight, i) => <li key={i}>{insight}</li>)}
                </ul>
@@ -779,6 +792,7 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
 }
 
 function AiAdviceDialog({ onClose }: { onClose: () => void }) {
+  const { t, language } = useLanguage();
   const advice = useGetAdvice();
   
   useState(() => {
@@ -786,9 +800,9 @@ function AiAdviceDialog({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DialogWrapper title="استشارة الذكاء الاصطناعي" isOpen={true} onClose={onClose}>
+    <DialogWrapper title={t("dashboard.dialogs.advice")} isOpen={true} onClose={onClose}>
       {advice.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
-       advice.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       advice.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        advice.data?.awaitingVerification ? <AwaitingVerificationNotice message={advice.data.message} /> :
        advice.data && (
          <div className="bg-primary/5 p-6 rounded-xl border border-primary/10">
@@ -810,6 +824,7 @@ function AiAdviceDialog({ onClose }: { onClose: () => void }) {
 }
 
 function RestructureDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useLanguage();
   const plan = useGetRestructurePlan();
   
   useState(() => {
@@ -817,25 +832,25 @@ function RestructureDialog({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DialogWrapper title="خطة إعادة الهيكلة المقترحة" isOpen={true} onClose={onClose}>
+    <DialogWrapper title={t("dashboard.dialogs.restructure")} isOpen={true} onClose={onClose}>
       {plan.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
-       plan.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       plan.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        plan.data?.awaitingVerification ? <AwaitingVerificationNotice message={plan.data.message} /> :
        plan.data && (
          <div className="space-y-6">
            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg border border-secondary/20">
              <div className="text-center">
-               <p className="text-sm text-muted-foreground">العبء الحالي</p>
-               <p className="text-xl font-bold line-through text-muted-foreground">{plan.data.currentMonthlyBurden} د.أ</p>
+                <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.current")}</p>
+                <p className="text-xl font-bold line-through text-muted-foreground">{plan.data.currentMonthlyBurden} {t("common.currency")}</p>
              </div>
              <ArrowRightLeft className="w-6 h-6 text-secondary" />
              <div className="text-center">
-               <p className="text-sm text-secondary font-bold">العبء المستهدف</p>
-               <p className="text-2xl font-bold text-primary">{plan.data.targetMonthlyBurden} د.أ</p>
+                <p className="text-sm text-secondary font-bold">{t("dashboard.dialogs.target")}</p>
+                <p className="text-2xl font-bold text-primary">{plan.data.targetMonthlyBurden} {t("common.currency")}</p>
              </div>
            </div>
 
-           <p className="text-center font-medium">المدة المتوقعة لتنفيذ الخطة: <span className="text-secondary">{plan.data.months} أشهر</span></p>
+           <p className="text-center font-medium">{t("dashboard.dialogs.duration", { months: plan.data.months ?? 0 })}</p>
 
            <div className="relative border-r-2 border-primary/20 pr-6 mt-6 space-y-8">
              {(plan.data.steps ?? []).map((step, i) => (
@@ -853,6 +868,7 @@ function RestructureDialog({ onClose }: { onClose: () => void }) {
 }
 
 function ConsolidationDialog({ onClose }: { onClose: () => void }) {
+  const { t, language } = useLanguage();
   const req = useRequestConsolidation();
   
   useState(() => {
@@ -860,9 +876,9 @@ function ConsolidationDialog({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DialogWrapper title="طلب توحيد القروض" isOpen={true} onClose={onClose}>
+    <DialogWrapper title={t("dashboard.dialogs.consolidation")} isOpen={true} onClose={onClose}>
       {req.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
-       req.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       req.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        req.data?.awaitingVerification ? <AwaitingVerificationNotice message={req.data.message} /> :
        req.data && (
          <div className="text-center py-6 space-y-6">
@@ -871,16 +887,16 @@ function ConsolidationDialog({ onClose }: { onClose: () => void }) {
            </div>
            
            <div>
-             <h3 className="text-xl font-bold mb-2">تم تسجيل طلبك المبدئي</h3>
-             <p className="text-muted-foreground">رقم الطلب: #{req.data.id}</p>
+              <h3 className="text-xl font-bold mb-2">{t("dashboard.dialogs.initialSuccess")}</h3>
+              <p className="text-muted-foreground">{t("dashboard.dialogs.requestNumber", { id: req.data.id ?? 0 })}</p>
            </div>
            
            <div className="bg-muted/30 p-6 rounded-xl inline-block text-right border">
-             <p className="mb-2"><strong>المؤسسات المشمولة:</strong> {req.data.institutionsIncluded}</p>
-             <p><strong>القسط الموحد التقديري:</strong> {(req.data.estimatedConsolidatedMonthlyPayment ?? 0).toLocaleString()} د.أ / شهر</p>
+              <p className="mb-2"><strong>{t("dashboard.dialogs.institutions")}</strong> {req.data.institutionsIncluded}</p>
+              <p><strong>{t("dashboard.dialogs.estimated")}</strong> {(req.data.estimatedConsolidatedMonthlyPayment ?? 0).toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")} / {language === "ar" ? "شهر" : "month"}</p>
            </div>
            
-           <p className="text-sm text-muted-foreground">سيقوم أحد مستشارينا بالتواصل معك قريباً لاستكمال الإجراءات.</p>
+            <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.contact")}</p>
          </div>
        )}
     </DialogWrapper>
@@ -888,6 +904,7 @@ function ConsolidationDialog({ onClose }: { onClose: () => void }) {
 }
 
 function EligibilityDialog({ onClose }: { onClose: () => void }) {
+  const { t, language } = useLanguage();
   const check = useAssessLoanEligibility();
   
   useState(() => {
@@ -895,14 +912,14 @@ function EligibilityDialog({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DialogWrapper title="تقييم أهلية التمويل الإضافي" isOpen={true} onClose={onClose}>
+    <DialogWrapper title={t("dashboard.dialogs.eligibility")} isOpen={true} onClose={onClose}>
       {check.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
-       check.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       check.isError ? <p className="text-destructive">{t("dashboard.error.generic")}</p> : 
        check.data && (
          <div className="space-y-6">
            {/* Credit Score */}
            <div className="p-6 rounded-xl border text-center bg-primary/5 border-primary/10">
-             <p className="text-sm text-muted-foreground mb-2">درجتك الائتمانية</p>
+              <p className="text-sm text-muted-foreground mb-2">{t("dashboard.dialogs.creditScore")}</p>
              <p className="text-4xl font-extrabold" style={{ color: check.data.creditScoreColor }}>{check.data.creditScore}</p>
              <p className="text-sm font-medium mt-1" style={{ color: check.data.creditScoreColor }}>{check.data.creditScoreLabel}</p>
              <div className="w-full h-2 rounded-full bg-muted mt-4 overflow-hidden">
@@ -915,7 +932,7 @@ function EligibilityDialog({ onClose }: { onClose: () => void }) {
 
            <div className={`p-6 rounded-xl border text-center ${check.data.eligible ? 'bg-green-50 border-green-200 text-green-800' : 'bg-destructive/5 border-destructive/20 text-destructive'}`}>
              <h3 className="text-2xl font-bold mb-2">
-               {check.data.eligible ? "أنت مؤهل للحصول على تمويل إضافي" : "غير مؤهل حالياً لتمويل إضافي"}
+                {check.data.eligible ? t("dashboard.dialogs.eligible") : t("dashboard.dialogs.notEligible")}
              </h3>
              <p className="opacity-90">{check.data.recommendation}</p>
            </div>
@@ -923,12 +940,12 @@ function EligibilityDialog({ onClose }: { onClose: () => void }) {
            {check.data.eligible && (
              <div className="grid grid-cols-2 gap-4">
                <div className="p-4 bg-muted/30 rounded-lg text-center border">
-                 <p className="text-sm text-muted-foreground">المبلغ الموصى به</p>
-                 <p className="text-2xl font-bold text-primary">{check.data.recommendedAmount?.toLocaleString()} د.أ</p>
+                  <p className="text-sm text-muted-foreground">{t("dashboard.application.recommended")}</p>
+                  <p className="text-2xl font-bold text-primary">{check.data.recommendedAmount?.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
                </div>
                <div className="p-4 bg-muted/30 rounded-lg text-center border">
-                 <p className="text-sm text-muted-foreground">القسط الشهري المتوقع</p>
-                 <p className="text-2xl font-bold text-secondary">{check.data.monthlyInstallment?.toLocaleString()} د.أ</p>
+                  <p className="text-sm text-muted-foreground">{t("dashboard.dialogs.expectedInstallment")}</p>
+                  <p className="text-2xl font-bold text-secondary">{check.data.monthlyInstallment?.toLocaleString(language === "ar" ? "ar-JO" : "en-US")} {t("common.currency")}</p>
                </div>
              </div>
            )}

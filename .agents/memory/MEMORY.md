@@ -8,3 +8,4 @@
 - [DebtLens loan_applications lifecycle & test mocking](debtlens-loan-application-lifecycle.md) — status flow through terminal admin decision; admin_routes.py uses inline `import module` so tests must monkeypatch the real module, not admin_routes' attribute.
 - [Shared API client generated declarations](api-client-generated-dist.md) — regenerate and rebuild shared API declarations after OpenAPI changes before diagnosing missing frontend exports.
 - [Guarantor decision history](debtlens-guarantor-decision-history.md) — append final admin decisions atomically and expose normalized chronological entries to reviewers.
+- [DebtLens i18n architecture](debtlens-i18n-architecture.md) — custom Arabic/English i18n (no library): per-page dictionaries + dot-path `t()`; lenders.ts already bilingual.

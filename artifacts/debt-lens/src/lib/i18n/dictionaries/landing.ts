@@ -1,0 +1,66 @@
+export const landing = {
+  ar: {
+    ticker: { label: "أخبار مالية" },
+    hero: {
+      badge: "مستشارك المالي الموثوق في الأردن",
+      title: "استعد السيطرة على ديونك بوضوح وحلول",
+      titleHighlight: "مبنية على البيانات",
+      subtitle: "منصتك الرقمية الآمنة لتوحيد الالتزامات المالية، تحليل النفقات، والحصول على خطط سداد ذكية تناسب دخلك بدقة.",
+      startCta: "ابدأ رحلتك الآن",
+      loginCta: "تسجيل الدخول",
+    },
+    about: {
+      title: "الشفافية في كل خطوة",
+      body: "في DebtLens، نحن نؤمن بأن المعرفة هي أول خطوة نحو الاستقرار المالي. نقوم بجمع وتحليل بياناتك من مختلف البنوك وشركات التمويل الأردنية لنقدم لك صورة واضحة ومجردة لوضعك المالي.",
+      points: {
+        point1: "تحليل دقيق لنسبة عبء الدين",
+        point2: "اقتراحات توحيد القروض لتخفيض القسط الشهري",
+        point3: "أعلى معايير الأمان والسرية لبياناتك البنكية",
+      },
+      badgeLabel: "القسط الشهري تم تخفيضه",
+      badgeValue: "30% توفير",
+    },
+    services: {
+      title: "خدمات متكاملة لإدارة ديونك",
+      subtitle: "اختر الخدمة التي تناسب احتياجك. جميع الخدمات تتطلب إنشاء حساب مجاني لاستكمال التحليل.",
+      browse: "تصفح الخدمة",
+      analysis: { title: "تحليل شامل للبيانات", desc: "دراسة مفصلة لوضعك المالي وتوزيع ديونك عبر الجهات المختلفة." },
+      advice: { title: "نصائح الذكاء الاصطناعي", desc: "نصائح مالية مخصصة مبنية على خوارزمياتنا لتحسين تصنيفك الائتماني." },
+      restructure: { title: "خطط إعادة الهيكلة", desc: "سيناريوهات مقترحة لتقليل القسط الشهري وتقليص فترة السداد." },
+      consolidation: { title: "طلب توحيد القروض", desc: "جمع كافة ديونك من المؤسسات المختلفة في قرض واحد بقسط مريح." },
+      eligibility: { title: "تقييم أهلية التمويل", desc: "فحص سريع لمدى أهليتك للحصول على تمويل إضافي دون الإضرار بوضعك المالي." },
+    },
+  },
+  en: {
+    ticker: { label: "Financial news" },
+    hero: {
+      badge: "Your trusted financial advisor in Jordan",
+      title: "Take back control of your debt with clarity and",
+      titleHighlight: "data-driven solutions",
+      subtitle: "Your secure digital platform to consolidate obligations, analyze spending, and get smart repayment plans tailored precisely to your income.",
+      startCta: "Start your journey",
+      loginCta: "Log in",
+    },
+    about: {
+      title: "Transparency at every step",
+      body: "At DebtLens, we believe knowledge is the first step toward financial stability. We collect and analyze your data across Jordan's banks and financing companies to give you a clear, objective picture of your finances.",
+      points: {
+        point1: "Precise analysis of your debt-to-income ratio",
+        point2: "Loan consolidation suggestions to lower your monthly installment",
+        point3: "The highest security and confidentiality standards for your banking data",
+      },
+      badgeLabel: "Monthly installment reduced",
+      badgeValue: "30% savings",
+    },
+    services: {
+      title: "Complete services to manage your debt",
+      subtitle: "Choose the service that fits your needs. All services require a free account to complete the analysis.",
+      browse: "Browse service",
+      analysis: { title: "Comprehensive data analysis", desc: "A detailed study of your finances and debt distribution across institutions." },
+      advice: { title: "AI-powered advice", desc: "Personalized financial advice based on our algorithms to improve your credit standing." },
+      restructure: { title: "Restructuring plans", desc: "Suggested scenarios to reduce your monthly installment and shorten your repayment period." },
+      consolidation: { title: "Loan consolidation request", desc: "Combine all your debts from different institutions into one loan with a comfortable installment." },
+      eligibility: { title: "Financing eligibility check", desc: "A quick check of your eligibility for additional financing without harming your financial position." },
+    },
+  },
+};

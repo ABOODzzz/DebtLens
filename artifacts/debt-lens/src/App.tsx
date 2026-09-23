@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { LanguageProvider } from '@/lib/i18n/context';
 import { Layout } from '@/components/layout';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 
@@ -163,16 +164,18 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <RoutedErrorBoundary>
-              <Router />
-            </RoutedErrorBoundary>
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+              <RoutedErrorBoundary>
+                <Router />
+              </RoutedErrorBoundary>
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </AuthProvider>
+      </LanguageProvider>
     </QueryClientProvider>
   );
 }
