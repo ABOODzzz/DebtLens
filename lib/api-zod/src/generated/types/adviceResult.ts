@@ -7,6 +7,9 @@
  */
 
 export interface AdviceResult {
-  advice: string;
-  generatedAt: Date;
+  /** True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  advice?: string;
+  generatedAt?: Date;
 }

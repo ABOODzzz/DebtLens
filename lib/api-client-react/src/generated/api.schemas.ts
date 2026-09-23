@@ -100,12 +100,15 @@ export const AnalyzeResultType = {
 } as const;
 
 export interface AnalyzeResult {
-  type: AnalyzeResultType;
-  summary: string;
-  debtBreakdown: DebtBreakdownItem[];
-  totalRemainingDebt: number;
-  debtToIncomeRatio: number;
-  insights: string[];
+  /** True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  type?: AnalyzeResultType;
+  summary?: string;
+  debtBreakdown?: DebtBreakdownItem[];
+  totalRemainingDebt?: number;
+  debtToIncomeRatio?: number;
+  insights?: string[];
 }
 
 export interface RestructureStep {
@@ -115,17 +118,23 @@ export interface RestructureStep {
 }
 
 export interface RestructureResult {
-  currentMonthlyBurden: number;
-  targetMonthlyBurden: number;
-  currentDebtToIncomeRatio: number;
-  targetDebtToIncomeRatio: number;
-  months: number;
-  steps: RestructureStep[];
+  /** True when the user has no admin-verified statements yet (or no active loans to restructure), in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  currentMonthlyBurden?: number;
+  targetMonthlyBurden?: number;
+  currentDebtToIncomeRatio?: number;
+  targetDebtToIncomeRatio?: number;
+  months?: number;
+  steps?: RestructureStep[];
 }
 
 export interface AdviceResult {
-  advice: string;
-  generatedAt: string;
+  /** True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  advice?: string;
+  generatedAt?: string;
 }
 
 export type ConsolidationRequestResultStatus = typeof ConsolidationRequestResultStatus[keyof typeof ConsolidationRequestResultStatus];
@@ -136,11 +145,14 @@ export const ConsolidationRequestResultStatus = {
 } as const;
 
 export interface ConsolidationRequestResult {
-  id: number;
-  status: ConsolidationRequestResultStatus;
-  estimatedConsolidatedMonthlyPayment: number;
-  institutionsIncluded: number;
-  createdAt: string;
+  /** True when the user has no admin-verified statements yet (or fewer than two financing institutions on file), in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  id?: number;
+  status?: ConsolidationRequestResultStatus;
+  estimatedConsolidatedMonthlyPayment?: number;
+  institutionsIncluded?: number;
+  createdAt?: string;
 }
 
 export interface LoanEligibilityResult {

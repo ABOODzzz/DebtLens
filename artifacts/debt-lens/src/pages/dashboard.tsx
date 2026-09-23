@@ -266,6 +266,17 @@ function ServiceCard({ title, description, icon, onClick }: { title: string, des
 
 // --- Dialogs (Fetching real data when opened) ---
 
+function AwaitingVerificationNotice({ message }: { message?: string }) {
+  return (
+    <div className="flex flex-col items-center text-center gap-3 py-6">
+      <AlertCircle className="w-10 h-10 text-secondary" />
+      <p className="text-muted-foreground leading-relaxed">
+        {message || "بياناتك المالية لا تزال قيد المراجعة والتحليل من قبل فريقنا. سنعلمك فور اكتمال التحليل لعرض نتائجك الدقيقة."}
+      </p>
+    </div>
+  );
+}
+
 const DialogWrapper = ({ title, isOpen, onClose, children }: { title: string, isOpen: boolean, onClose: () => void, children: React.ReactNode }) => (
   <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir="rtl">
@@ -291,6 +302,7 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
     <DialogWrapper title="التحليل الشامل" isOpen={true} onClose={onClose}>
       {analysis.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
        analysis.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       analysis.data?.awaitingVerification ? <AwaitingVerificationNotice message={analysis.data.message} /> :
        analysis.data && (
          <div className="space-y-6">
            <p className="text-lg leading-relaxed text-primary">{analysis.data.summary}</p>
@@ -298,18 +310,18 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
            <div className="grid grid-cols-2 gap-4">
              <div className="p-4 bg-muted/30 rounded-lg">
                <p className="text-sm text-muted-foreground">إجمالي الدين المتبقي</p>
-               <p className="text-xl font-bold">{analysis.data.totalRemainingDebt.toLocaleString()} د.أ</p>
+               <p className="text-xl font-bold">{(analysis.data.totalRemainingDebt ?? 0).toLocaleString()} د.أ</p>
              </div>
              <div className="p-4 bg-muted/30 rounded-lg">
                <p className="text-sm text-muted-foreground">نسبة العبء</p>
-               <p className="text-xl font-bold text-secondary">{Math.round(analysis.data.debtToIncomeRatio)}%</p>
+               <p className="text-xl font-bold text-secondary">{Math.round(analysis.data.debtToIncomeRatio ?? 0)}%</p>
              </div>
            </div>
 
            <div>
              <h4 className="font-bold mb-3">تفصيل الديون</h4>
              <div className="space-y-2">
-               {analysis.data.debtBreakdown.map((d, i) => (
+               {(analysis.data.debtBreakdown ?? []).map((d, i) => (
                  <div key={i} className="flex justify-between items-center p-3 border rounded">
                    <span>{d.lenderName}</span>
                    <span className="font-bold">{d.remainingAmount.toLocaleString()} د.أ</span>
@@ -318,11 +330,11 @@ function FullAnalysisDialog({ onClose }: { onClose: () => void }) {
              </div>
            </div>
 
-           {analysis.data.insights.length > 0 && (
+           {(analysis.data.insights ?? []).length > 0 && (
              <div>
                <h4 className="font-bold mb-2">رؤى مالية</h4>
                <ul className="list-disc list-inside space-y-1 text-muted-foreground pr-4">
-                 {analysis.data.insights.map((insight, i) => <li key={i}>{insight}</li>)}
+                 {(analysis.data.insights ?? []).map((insight, i) => <li key={i}>{insight}</li>)}
                </ul>
              </div>
            )}
@@ -343,15 +355,18 @@ function AiAdviceDialog({ onClose }: { onClose: () => void }) {
     <DialogWrapper title="استشارة الذكاء الاصطناعي" isOpen={true} onClose={onClose}>
       {advice.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
        advice.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       advice.data?.awaitingVerification ? <AwaitingVerificationNotice message={advice.data.message} /> :
        advice.data && (
          <div className="bg-primary/5 p-6 rounded-xl border border-primary/10">
            <div className="flex gap-4">
              <Sparkles className="w-8 h-8 text-secondary flex-shrink-0" />
              <div>
                <p className="whitespace-pre-line leading-relaxed text-primary/90">{advice.data.advice}</p>
-               <p className="text-xs text-muted-foreground mt-6 text-left" dir="ltr">
-                 Generated: {new Date(advice.data.generatedAt).toLocaleString()}
-               </p>
+               {advice.data.generatedAt && (
+                 <p className="text-xs text-muted-foreground mt-6 text-left" dir="ltr">
+                   Generated: {new Date(advice.data.generatedAt).toLocaleString()}
+                 </p>
+               )}
              </div>
            </div>
          </div>
@@ -371,6 +386,7 @@ function RestructureDialog({ onClose }: { onClose: () => void }) {
     <DialogWrapper title="خطة إعادة الهيكلة المقترحة" isOpen={true} onClose={onClose}>
       {plan.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
        plan.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       plan.data?.awaitingVerification ? <AwaitingVerificationNotice message={plan.data.message} /> :
        plan.data && (
          <div className="space-y-6">
            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg border border-secondary/20">
@@ -388,7 +404,7 @@ function RestructureDialog({ onClose }: { onClose: () => void }) {
            <p className="text-center font-medium">المدة المتوقعة لتنفيذ الخطة: <span className="text-secondary">{plan.data.months} أشهر</span></p>
 
            <div className="relative border-r-2 border-primary/20 pr-6 mt-6 space-y-8">
-             {plan.data.steps.map((step, i) => (
+             {(plan.data.steps ?? []).map((step, i) => (
                <div key={i} className="relative">
                  <div className="absolute -right-[35px] w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold ring-4 ring-background">{i + 1}</div>
                  <h4 className="font-bold text-primary">{step.lenderName} — <span className="text-secondary">{step.action}</span></h4>
@@ -413,6 +429,7 @@ function ConsolidationDialog({ onClose }: { onClose: () => void }) {
     <DialogWrapper title="طلب توحيد القروض" isOpen={true} onClose={onClose}>
       {req.isPending ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-secondary" /> : 
        req.isError ? <p className="text-destructive">حدث خطأ</p> : 
+       req.data?.awaitingVerification ? <AwaitingVerificationNotice message={req.data.message} /> :
        req.data && (
          <div className="text-center py-6 space-y-6">
            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
@@ -426,7 +443,7 @@ function ConsolidationDialog({ onClose }: { onClose: () => void }) {
            
            <div className="bg-muted/30 p-6 rounded-xl inline-block text-right border">
              <p className="mb-2"><strong>المؤسسات المشمولة:</strong> {req.data.institutionsIncluded}</p>
-             <p><strong>القسط الموحد التقديري:</strong> {req.data.estimatedConsolidatedMonthlyPayment.toLocaleString()} د.أ / شهر</p>
+             <p><strong>القسط الموحد التقديري:</strong> {(req.data.estimatedConsolidatedMonthlyPayment ?? 0).toLocaleString()} د.أ / شهر</p>
            </div>
            
            <p className="text-sm text-muted-foreground">سيقوم أحد مستشارينا بالتواصل معك قريباً لاستكمال الإجراءات.</p>

@@ -8,10 +8,13 @@
 import type { RestructureStep } from './restructureStep';
 
 export interface RestructureResult {
-  currentMonthlyBurden: number;
-  targetMonthlyBurden: number;
-  currentDebtToIncomeRatio: number;
-  targetDebtToIncomeRatio: number;
-  months: number;
-  steps: RestructureStep[];
+  /** True when the user has no admin-verified statements yet (or no active loans to restructure), in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  currentMonthlyBurden?: number;
+  targetMonthlyBurden?: number;
+  currentDebtToIncomeRatio?: number;
+  targetDebtToIncomeRatio?: number;
+  months?: number;
+  steps?: RestructureStep[];
 }

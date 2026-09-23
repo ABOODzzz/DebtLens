@@ -73,17 +73,19 @@ export const AnalyzeFinancesBody = zod.object({
 })
 
 export const AnalyzeFinancesResponse = zod.object({
-  "type": zod.enum(['transactions', 'full']),
-  "summary": zod.string(),
+  "awaitingVerification": zod.boolean().describe('True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted.\n'),
+  "message": zod.string().optional(),
+  "type": zod.enum(['transactions', 'full']).optional(),
+  "summary": zod.string().optional(),
   "debtBreakdown": zod.array(zod.object({
   "lenderName": zod.string(),
   "remainingAmount": zod.number(),
   "startDate": zod.string(),
   "estimatedMonthlyBurden": zod.number().optional()
-})),
-  "totalRemainingDebt": zod.number(),
-  "debtToIncomeRatio": zod.number(),
-  "insights": zod.array(zod.string())
+})).optional(),
+  "totalRemainingDebt": zod.number().optional(),
+  "debtToIncomeRatio": zod.number().optional(),
+  "insights": zod.array(zod.string()).optional()
 })
 
 
@@ -91,16 +93,18 @@ export const AnalyzeFinancesResponse = zod.object({
  * @summary Generate a debt restructuring plan
  */
 export const GetRestructurePlanResponse = zod.object({
-  "currentMonthlyBurden": zod.number(),
-  "targetMonthlyBurden": zod.number(),
-  "currentDebtToIncomeRatio": zod.number(),
-  "targetDebtToIncomeRatio": zod.number(),
-  "months": zod.number().int(),
+  "awaitingVerification": zod.boolean().describe('True when the user has no admin-verified statements yet (or no active loans to restructure), in which case only `message` is populated and every other field is omitted.\n'),
+  "message": zod.string().optional(),
+  "currentMonthlyBurden": zod.number().optional(),
+  "targetMonthlyBurden": zod.number().optional(),
+  "currentDebtToIncomeRatio": zod.number().optional(),
+  "targetDebtToIncomeRatio": zod.number().optional(),
+  "months": zod.number().int().optional(),
   "steps": zod.array(zod.object({
   "lenderName": zod.string(),
   "action": zod.string(),
   "detail": zod.string()
-}))
+})).optional()
 })
 
 
@@ -108,8 +112,10 @@ export const GetRestructurePlanResponse = zod.object({
  * @summary Get AI-generated personalized financial advice
  */
 export const GetAdviceResponse = zod.object({
-  "advice": zod.string(),
-  "generatedAt": zod.coerce.date()
+  "awaitingVerification": zod.boolean().describe('True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted.\n'),
+  "message": zod.string().optional(),
+  "advice": zod.string().optional(),
+  "generatedAt": zod.coerce.date().optional()
 })
 
 
@@ -117,11 +123,13 @@ export const GetAdviceResponse = zod.object({
  * @summary Request loan consolidation across financing institutions
  */
 export const RequestConsolidationResponse = zod.object({
-  "id": zod.number().int(),
-  "status": zod.enum(['submitted']),
-  "estimatedConsolidatedMonthlyPayment": zod.number(),
-  "institutionsIncluded": zod.number().int(),
-  "createdAt": zod.coerce.date()
+  "awaitingVerification": zod.boolean().describe('True when the user has no admin-verified statements yet (or fewer than two financing institutions on file), in which case only `message` is populated and every other field is omitted.\n'),
+  "message": zod.string().optional(),
+  "id": zod.number().int().optional(),
+  "status": zod.enum(['submitted']).optional(),
+  "estimatedConsolidatedMonthlyPayment": zod.number().optional(),
+  "institutionsIncluded": zod.number().int().optional(),
+  "createdAt": zod.coerce.date().optional()
 })
 
 

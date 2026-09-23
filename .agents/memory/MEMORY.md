@@ -1,1 +1,2 @@
 - [Firebase Storage rules via REST](firebase-storage-rules-deploy.md) — deploy security rules programmatically with the service account, no Firebase CLI/login needed.
+- [DebtLens gated-endpoint pattern](debtlens-awaiting-verification-pattern.md) — how "awaiting verification" placeholder responses must stay schema-conforming across api_routes.py, openapi.yaml, and dashboard.tsx.

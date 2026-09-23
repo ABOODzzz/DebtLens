@@ -86,6 +86,7 @@ router.post("/analyze", async (req, res) => {
         : `تحليل شامل: دخل شهري ${computed.monthlyIncome.toFixed(0)} دينار مقابل عبء شهري تقديري ${computed.estimatedMonthlyDebtPayments.toFixed(0)} دينار.`;
 
     const data = AnalyzeFinancesResponse.parse({
+      awaitingVerification: false,
       type: parsed.data.type,
       summary,
       debtBreakdown,
@@ -131,6 +132,7 @@ router.post("/restructure", async (req, res) => {
     }));
 
     const data = GetRestructurePlanResponse.parse({
+      awaitingVerification: false,
       currentMonthlyBurden: computed.estimatedMonthlyDebtPayments,
       targetMonthlyBurden,
       currentDebtToIncomeRatio: computed.debtToIncomeRatio,
@@ -173,6 +175,7 @@ router.post("/advice", async (req, res) => {
     }
 
     const data = GetAdviceResponse.parse({
+      awaitingVerification: false,
       advice,
       generatedAt: new Date().toISOString(),
     });
@@ -214,6 +217,7 @@ router.post("/consolidation-request", async (req, res) => {
       .returning();
 
     const data = RequestConsolidationResponse.parse({
+      awaitingVerification: false,
       id: inserted!.id,
       status: "submitted",
       estimatedConsolidatedMonthlyPayment,

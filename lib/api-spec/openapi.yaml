@@ -498,13 +498,16 @@ components:
     AnalyzeResult:
       type: object
       required:
-        - type
-        - summary
-        - debtBreakdown
-        - totalRemainingDebt
-        - debtToIncomeRatio
-        - insights
+        - awaitingVerification
       properties:
+        awaitingVerification:
+          type: boolean
+          description: >
+            True when the user has no admin-verified statements yet, in
+            which case only `message` is populated and every other field
+            is omitted.
+        message:
+          type: string
         type:
           type: string
           enum: [transactions, full]
@@ -538,13 +541,16 @@ components:
     RestructureResult:
       type: object
       required:
-        - currentMonthlyBurden
-        - targetMonthlyBurden
-        - currentDebtToIncomeRatio
-        - targetDebtToIncomeRatio
-        - months
-        - steps
+        - awaitingVerification
       properties:
+        awaitingVerification:
+          type: boolean
+          description: >
+            True when the user has no admin-verified statements yet (or no
+            active loans to restructure), in which case only `message` is
+            populated and every other field is omitted.
+        message:
+          type: string
         currentMonthlyBurden:
           type: number
         targetMonthlyBurden:
@@ -562,9 +568,16 @@ components:
     AdviceResult:
       type: object
       required:
-        - advice
-        - generatedAt
+        - awaitingVerification
       properties:
+        awaitingVerification:
+          type: boolean
+          description: >
+            True when the user has no admin-verified statements yet, in
+            which case only `message` is populated and every other field
+            is omitted.
+        message:
+          type: string
         advice:
           type: string
         generatedAt:
@@ -573,12 +586,16 @@ components:
     ConsolidationRequestResult:
       type: object
       required:
-        - id
-        - status
-        - estimatedConsolidatedMonthlyPayment
-        - institutionsIncluded
-        - createdAt
+        - awaitingVerification
       properties:
+        awaitingVerification:
+          type: boolean
+          description: >
+            True when the user has no admin-verified statements yet (or
+            fewer than two financing institutions on file), in which case
+            only `message` is populated and every other field is omitted.
+        message:
+          type: string
         id:
           type: integer
         status:

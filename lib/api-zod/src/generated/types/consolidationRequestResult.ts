@@ -8,9 +8,12 @@
 import type { ConsolidationRequestResultStatus } from './consolidationRequestResultStatus';
 
 export interface ConsolidationRequestResult {
-  id: number;
-  status: ConsolidationRequestResultStatus;
-  estimatedConsolidatedMonthlyPayment: number;
-  institutionsIncluded: number;
-  createdAt: Date;
+  /** True when the user has no admin-verified statements yet (or fewer than two financing institutions on file), in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  id?: number;
+  status?: ConsolidationRequestResultStatus;
+  estimatedConsolidatedMonthlyPayment?: number;
+  institutionsIncluded?: number;
+  createdAt?: Date;
 }

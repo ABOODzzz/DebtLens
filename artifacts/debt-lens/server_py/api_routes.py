@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 import finance
 import market_data
@@ -47,9 +48,13 @@ def _load_profile(uid: str) -> dict:
 
 def _awaiting_verification_response() -> dict:
     return {
-        "awaiting_verification": True,
+        "awaitingVerification": True,
         "message": AWAITING_VERIFICATION_MESSAGE,
     }
+
+
+class AnalyzeInput(BaseModel):
+    type: str
 
 
 def _require_anthropic() -> None:
@@ -220,8 +225,8 @@ def headlines():
     ]
 
 
-@router.get("/analyze")
-def analyze(user: dict = Depends(get_current_user)):
+@router.post("/analyze")
+def analyze(payload: AnalyzeInput, user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
     if profile["data_source"] != "verified":
@@ -230,13 +235,14 @@ def analyze(user: dict = Depends(get_current_user)):
     risk_metrics = finance.compute_risk_metrics(profile["transactions"])
 
     return {
-        "awaiting_verification": False,
+        "awaitingVerification": False,
+        "type": payload.type,
         "transactions": profile["transactions"],
         "risk_metrics": risk_metrics,
     }
 
 
-@router.get("/restructure")
+@router.post("/restructure")
 def restructure(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
@@ -248,13 +254,13 @@ def restructure(user: dict = Depends(get_current_user)):
         return _awaiting_verification_response()
 
     return {
-        "awaiting_verification": False,
+        "awaitingVerification": False,
         "institution_breakdown": context["institution_breakdown"],
         "restructuring_plan": context["restructuring_plan"],
     }
 
 
-@router.get("/advice")
+@router.post("/advice")
 def advice(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
@@ -305,14 +311,14 @@ def advice(user: dict = Depends(get_current_user)):
         ) from exc
 
     return {
-        "awaiting_verification": False,
+        "awaitingVerification": False,
         "advice": advice_text,
         "risk_metrics": risk_metrics,
         "restructuring_plan": restructuring_plan,
     }
 
 
-@router.get("/consolidation-request")
+@router.post("/consolidation-request")
 def consolidation_request(user: dict = Depends(get_current_user)):
     profile = _load_profile(user["uid"])
 
@@ -355,7 +361,7 @@ def consolidation_request(user: dict = Depends(get_current_user)):
         ) from exc
 
     return {
-        "awaiting_verification": False,
+        "awaitingVerification": False,
         "letter": letter_text,
         "institution_breakdown": context["institution_breakdown"],
     }
@@ -365,7 +371,7 @@ def consolidation_request(user: dict = Depends(get_current_user)):
 # AI loan eligibility assessment
 #
 # Unlike the other endpoints above, this one never blocks on
-# "awaiting_verification" -- a user with only self-reported onboarding data
+# "awaitingVerification" -- a user with only self-reported onboarding data
 # (or none at all) still gets an assessment, just based on synthetic demo
 # transactions instead of real statement data. The response always says
 # which kind of data it was based on.

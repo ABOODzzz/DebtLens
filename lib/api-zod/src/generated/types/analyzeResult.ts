@@ -9,10 +9,13 @@ import type { AnalyzeResultType } from './analyzeResultType';
 import type { DebtBreakdownItem } from './debtBreakdownItem';
 
 export interface AnalyzeResult {
-  type: AnalyzeResultType;
-  summary: string;
-  debtBreakdown: DebtBreakdownItem[];
-  totalRemainingDebt: number;
-  debtToIncomeRatio: number;
-  insights: string[];
+  /** True when the user has no admin-verified statements yet, in which case only `message` is populated and every other field is omitted. */
+  awaitingVerification: boolean;
+  message?: string;
+  type?: AnalyzeResultType;
+  summary?: string;
+  debtBreakdown?: DebtBreakdownItem[];
+  totalRemainingDebt?: number;
+  debtToIncomeRatio?: number;
+  insights?: string[];
 }
