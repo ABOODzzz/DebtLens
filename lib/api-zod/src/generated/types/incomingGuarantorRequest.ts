@@ -8,6 +8,7 @@
 import type { IncomingGuarantorRequestStatus } from './incomingGuarantorRequestStatus';
 
 export interface IncomingGuarantorRequest {
+  requesterName?: string;
   status: IncomingGuarantorRequestStatus;
   /** @nullable */
   requestedAt?: Date | null;

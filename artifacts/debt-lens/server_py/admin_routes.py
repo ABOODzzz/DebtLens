@@ -61,6 +61,21 @@ class AnalyzeStatementRequest(BaseModel):
     file_url: str
 
 
+def _signed_url(path: str | None, days: int = 1) -> str | None:
+    """Turn a Firebase Storage path into a short-lived, admin-viewable URL. Returns None on any failure."""
+    if not path:
+        return None
+    try:
+        bucket = get_storage_bucket()
+        blob = bucket.blob(path)
+        if not blob.exists():
+            return None
+        return blob.generate_signed_url(version="v4", expiration=timedelta(days=days))
+    except Exception as exc:  # noqa: BLE001 - signing is best-effort, never blocks the caller
+        logger.warning("Failed to sign storage URL for %s: %s", path, exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # File download + Claude content block
 # ---------------------------------------------------------------------------
@@ -708,6 +723,84 @@ def list_users(admin: dict = Depends(get_current_admin)):
 
 
 # ---------------------------------------------------------------------------
+# GET /users/{uid} -- full detail for one customer: KYC photos, extracted
+# identity, and complete financial profile. Backs the admin detail view.
+# ---------------------------------------------------------------------------
+@router.get("/users/{uid}")
+def get_user_detail(uid: str, admin: dict = Depends(get_current_admin)):
+    db = _get_db()
+    user_doc = _get_user_doc(db, uid)
+    kyc = user_doc.get("kycVerification") or {}
+    name, national_id = _customer_identity(user_doc)
+
+    try:
+        profile = get_user_financial_profile(uid)
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach the database right now. Please try again shortly.",
+        ) from exc
+
+    statements_map = user_doc.get("statements") or {}
+    statements = [
+        {
+            "statement_id": statement_id,
+            "institution_name": statement.get("institutionName"),
+            "statement_type": statement.get("statementType"),
+            "principal_amount": statement.get("principalAmount"),
+            "monthly_installment": statement.get("monthlyInstallment"),
+            "remaining_balance": statement.get("remainingBalance"),
+            "file_url": statement.get("fileUrl"),
+        }
+        for statement_id, statement in statements_map.items()
+        if isinstance(statement, dict)
+    ]
+
+    updated_at = user_doc.get("updatedAt")
+    updated_at_iso = updated_at.isoformat() if hasattr(updated_at, "isoformat") else None
+
+    return {
+        "uid": uid,
+        "name": name,
+        "national_id": national_id,
+        "review_status": user_doc.get("reviewStatus") or "no_submission",
+        "review_reason": user_doc.get("reviewReason"),
+        "guarantor_uid": user_doc.get("guarantorUid"),
+        "updated_at": updated_at_iso,
+        "kyc": {
+            "typed_full_name": kyc.get("typedFullName"),
+            "typed_national_id": kyc.get("typedNationalId"),
+            "extracted_full_name": kyc.get("extractedFullName"),
+            "extracted_national_id": kyc.get("extractedNationalId"),
+            "face_match": kyc.get("faceMatch"),
+            "confidence": kyc.get("confidence"),
+            "ai_reason": kyc.get("aiReason"),
+            "id_photo_readable": kyc.get("idPhotoReadable"),
+            "selfie_readable": kyc.get("selfieReadable"),
+            "id_front_url": _signed_url(kyc.get("idFrontPath")),
+            "id_back_url": _signed_url(kyc.get("idBackPath")),
+            "selfie_url": _signed_url(kyc.get("selfiePath")),
+        },
+        "financial": {
+            "data_source": profile["data_source"],
+            "monthly_income": profile["profile"]["monthly_income"],
+            "employment_status": profile["profile"]["employment_status"],
+            "has_own_business": profile["profile"]["has_own_business"],
+            "employer_name": user_doc.get("employerName"),
+            "has_bank_account": user_doc.get("hasBankAccount"),
+            "bank_accounts": user_doc.get("bankAccounts") or [],
+            "declared_financing_companies": profile["profile"]["declared_financing_companies"],
+            "self_reported_debts": user_doc.get("debts") or [],
+            "debt_to_income_percentage": profile["debt_to_income_percentage"],
+            "stacking_flag": profile["stacking_flag"],
+            "statement_count": profile["statement_count"],
+            "institution_breakdown": profile["institution_breakdown"],
+        },
+        "statements": statements,
+    }
+
+
+# ---------------------------------------------------------------------------
 # POST /kyc-decision -- manual admin override of a user's identity review.
 # ---------------------------------------------------------------------------
 class KycDecisionBody(BaseModel):
@@ -853,8 +946,8 @@ def bank_request(body: BankRequestBody, admin: dict = Depends(get_current_admin)
     user_doc = _get_user_doc(db, body.uid)
 
     kyc = user_doc.get("kycVerification") or {}
-    id_photo_url = kyc.get("idPhotoUrl")
-    if not id_photo_url:
+    id_front_path = kyc.get("idFrontPath")
+    if not id_front_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No ID photo on file for this user; cannot verify identity for a bank request.",
@@ -863,13 +956,17 @@ def bank_request(body: BankRequestBody, admin: dict = Depends(get_current_admin)
     if not body.bank_accounts:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bank_accounts must be a non-empty list.")
 
-    downloaded = _download_file(id_photo_url)
-    if downloaded is None:
+    try:
+        bucket = get_storage_bucket()
+        blob = bucket.blob(id_front_path)
+        file_bytes = blob.download_as_bytes()
+        media_type = (blob.content_type or "image/jpeg").split(";")[0].strip().lower()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to download ID photo for uid=%s: %s", body.uid, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to download the user's ID photo.",
-        )
-    file_bytes, media_type = downloaded
+        ) from exc
     file_block = _file_content_block(file_bytes, media_type)
 
     try:
@@ -1015,6 +1112,215 @@ def user_insight(body: UserInsightBody, admin: dict = Depends(get_current_admin)
         "recommendation": insight["recommendation"],
         "notes": insight["notes"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Digital Guarantor admin review -- the guarantor's own acceptance only
+# raises the request to "awaiting_admin_review" (see guarantor.py); the
+# admin makes the final call here, backed by an AI comparison of both
+# parties' financial standing.
+# ---------------------------------------------------------------------------
+def _iso(value) -> str | None:
+    return value.isoformat() if hasattr(value, "isoformat") else None
+
+
+@router.get("/guarantor-requests")
+def list_guarantor_requests(admin: dict = Depends(get_current_admin)):
+    db = _get_db()
+
+    requests_out = []
+    for snapshot in db.collection("users").stream():
+        doc = snapshot.to_dict() or {}
+        request = doc.get("guarantorRequest")
+        if not request or request.get("status") not in ("awaiting_admin_review", "approved", "rejected"):
+            continue
+
+        requester_uid = snapshot.id
+        guarantor_uid = request.get("guarantorUid")
+        requester_name, requester_national_id = _customer_identity(doc)
+
+        guarantor_doc: dict = {}
+        if guarantor_uid:
+            guarantor_snapshot = db.collection("users").document(guarantor_uid).get()
+            guarantor_doc = guarantor_snapshot.to_dict() or {} if guarantor_snapshot.exists else {}
+        guarantor_name, guarantor_national_id = _customer_identity(guarantor_doc)
+
+        try:
+            requester_profile = get_user_financial_profile(requester_uid)
+        except FirebaseUnavailableError:
+            requester_profile = None
+        try:
+            guarantor_profile = get_user_financial_profile(guarantor_uid) if guarantor_uid else None
+        except FirebaseUnavailableError:
+            guarantor_profile = None
+
+        requests_out.append(
+            {
+                "requester_uid": requester_uid,
+                "requester_name": requester_name,
+                "requester_national_id": requester_national_id,
+                "guarantor_uid": guarantor_uid,
+                "guarantor_name": guarantor_name,
+                "guarantor_national_id": guarantor_national_id,
+                "status": request.get("status"),
+                "max_amount": request.get("maxAmount"),
+                "requested_at": _iso(request.get("requestedAt")),
+                "responded_at": _iso(request.get("respondedAt")),
+                "requester_debt_to_income_percentage": requester_profile["debt_to_income_percentage"]
+                if requester_profile
+                else None,
+                "requester_stacking_flag": requester_profile["stacking_flag"] if requester_profile else False,
+                "guarantor_debt_to_income_percentage": guarantor_profile["debt_to_income_percentage"]
+                if guarantor_profile
+                else None,
+                "guarantor_stacking_flag": guarantor_profile["stacking_flag"] if guarantor_profile else False,
+            }
+        )
+
+    priority = {"awaiting_admin_review": 0, "approved": 1, "rejected": 2}
+    requests_out.sort(key=lambda r: priority.get(r["status"], 1))
+
+    return {
+        "request_count": len(requests_out),
+        "awaiting_count": sum(1 for r in requests_out if r["status"] == "awaiting_admin_review"),
+        "requests": requests_out,
+    }
+
+
+class GuarantorInsightBody(BaseModel):
+    requester_uid: str
+
+
+_GUARANTOR_INSIGHT_RECOMMENDATIONS = {"approve", "reject"}
+
+
+def _parse_guarantor_insight_json(text: str) -> dict:
+    data = _try_parse_json(text)
+    if data is None:
+        data = _fix_json_via_claude(text)
+    if not isinstance(data, dict):
+        raise ValueError("Could not obtain valid JSON from the guarantor insight generation.")
+
+    if data.get("risk_tier") not in _RISK_TIERS_ARABIC_ADMIN:
+        raise ValueError("Missing or invalid 'risk_tier' in guarantor insight JSON")
+    if not isinstance(data.get("concerns"), list) or not all(isinstance(c, str) for c in data["concerns"]):
+        raise ValueError("Missing or invalid 'concerns' in guarantor insight JSON")
+    if data.get("recommendation") not in _GUARANTOR_INSIGHT_RECOMMENDATIONS:
+        raise ValueError("Missing or invalid 'recommendation' in guarantor insight JSON")
+    if not isinstance(data.get("notes"), str) or not data["notes"].strip():
+        raise ValueError("Missing or invalid 'notes' in guarantor insight JSON")
+
+    return data
+
+
+@router.post("/guarantor-insight")
+def guarantor_insight(body: GuarantorInsightBody, admin: dict = Depends(get_current_admin)):
+    _require_anthropic()
+    db = _get_db()
+
+    requester_doc = _get_user_doc(db, body.requester_uid)
+    request = requester_doc.get("guarantorRequest") or {}
+    guarantor_uid = request.get("guarantorUid")
+    if not guarantor_uid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No guarantor request found for this user.",
+        )
+    guarantor_doc = _get_user_doc(db, guarantor_uid)
+
+    requester_name, _ = _customer_identity(requester_doc)
+    guarantor_name, _ = _customer_identity(guarantor_doc)
+
+    try:
+        requester_profile = get_user_financial_profile(body.requester_uid)
+        guarantor_profile = get_user_financial_profile(guarantor_uid)
+    except FirebaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach the database right now. Please try again shortly.",
+        ) from exc
+
+    max_amount = request.get("maxAmount")
+
+    prompt = f"""أنت محلل مخاطر داخلي في مؤسسة تمويل. عميل يطلب تمويلاً ولديه "كفيل رقمي" -- شخص آخر مُوثّق \
+على المنصة يوافق على دعم طلبه حتى مبلغ {max_amount} دينار. قيّم مدى ملاءمة هذه الكفالة.
+
+بيانات مقدّم الطلب ({requester_name}):
+- الدخل الشهري: {requester_profile['profile']['monthly_income']} دينار (مصدر البيانات: {requester_profile['data_source']})
+- نسبة الدين إلى الدخل: {requester_profile['debt_to_income_percentage'] if requester_profile['debt_to_income_percentage'] is not None else 'غير متوفرة'}%
+- علامة تكديس القروض: {"نعم" if requester_profile['stacking_flag'] else "لا"}
+
+بيانات الكفيل الرقمي ({guarantor_name}):
+- الدخل الشهري: {guarantor_profile['profile']['monthly_income']} دينار (مصدر البيانات: {guarantor_profile['data_source']})
+- نسبة الدين إلى الدخل: {guarantor_profile['debt_to_income_percentage'] if guarantor_profile['debt_to_income_percentage'] is not None else 'غير متوفرة'}%
+- علامة تكديس القروض: {"نعم" if guarantor_profile['stacking_flag'] else "لا"}
+
+قيّم مستوى المخاطرة الإجمالي لقبول هذه الكفالة، وحدد أهم النقاط التي يجب على المراجع التحقق منها، وقدّم توصية بالموافقة أو الرفض.
+
+أعد ردك بصيغة JSON فقط، بدون أي نص إضافي قبله أو بعده، وبالضبط بالشكل التالي:
+{{"risk_tier": "منخفض" | "متوسط" | "مرتفع", "concerns": ["نقطة للتحقق منها 1", "نقطة للتحقق منها 2"], "recommendation": "approve" | "reject", "notes": "ملاحظة داخلية موجزة من سطرين إلى ثلاثة أسطر للمراجع"}}"""
+
+    try:
+        message = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=700,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = _extract_response_text(message)
+        insight = _parse_guarantor_insight_json(text)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Guarantor insight generation failed for requester_uid=%s: %s", body.requester_uid, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to generate a guarantor insight right now. Please try again shortly.",
+        ) from exc
+
+    return {
+        "requester_uid": body.requester_uid,
+        "guarantor_uid": guarantor_uid,
+        "risk_tier": insight["risk_tier"],
+        "concerns": insight["concerns"],
+        "recommendation": insight["recommendation"],
+        "notes": insight["notes"],
+    }
+
+
+class GuarantorDecisionBody(BaseModel):
+    requester_uid: str
+    decision: Literal["approved", "rejected"]
+    reason: str | None = None
+
+
+@router.post("/guarantor-decision")
+def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_current_admin)):
+    db = _get_db()
+    requester_ref = db.collection("users").document(body.requester_uid)
+    requester_doc = _get_user_doc(db, body.requester_uid)
+
+    request = requester_doc.get("guarantorRequest") or {}
+    guarantor_uid = request.get("guarantorUid")
+    if not guarantor_uid or request.get("status") != "awaiting_admin_review":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No guarantor request awaiting admin review for this user.",
+        )
+
+    from firebase_admin import firestore
+
+    update = {
+        "guarantorRequest.status": body.decision,
+        "guarantorRequest.adminDecisionAt": firestore.SERVER_TIMESTAMP,
+        "guarantorRequest.adminDecisionReason": body.reason,
+    }
+    if body.decision == "approved":
+        update["guarantorUid"] = guarantor_uid
+    requester_ref.update(update)
+
+    db.collection("users").document(guarantor_uid).update(
+        {f"incomingGuarantorRequests.{body.requester_uid}.status": body.decision}
+    )
+
+    return {"requester_uid": body.requester_uid, "guarantor_uid": guarantor_uid, "status": body.decision}
 
 
 # ---------------------------------------------------------------------------

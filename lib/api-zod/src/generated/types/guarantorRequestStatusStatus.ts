@@ -11,6 +11,8 @@ export type GuarantorRequestStatusStatus = typeof GuarantorRequestStatusStatus[k
 
 export const GuarantorRequestStatusStatus = {
   pending: 'pending',
+  awaiting_admin_review: 'awaiting_admin_review',
   approved: 'approved',
   declined: 'declined',
+  rejected: 'rejected',
 } as const;

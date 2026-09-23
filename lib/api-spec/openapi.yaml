@@ -273,6 +273,90 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /guarantor/request:
+    post:
+      operationId: requestGuarantor
+      tags: [guarantor]
+      summary: Request another verified customer to act as a digital guarantor
+      description: Looks the person up by national ID, checks they're verified and in good financial standing, then creates a pending request.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuarantorRequestInput"
+      responses:
+        "200":
+          description: Request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorRequestResult"
+        "400":
+          description: Invalid request (self-guarantee, unverified/over-leveraged guarantor)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No user found with that national ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /guarantor/respond:
+    post:
+      operationId: respondToGuarantorRequest
+      tags: [guarantor]
+      summary: Approve or decline an incoming guarantor request
+      description: Approving raises the request to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuarantorRespondInput"
+      responses:
+        "200":
+          description: Response recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorRespondResult"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No pending request from that user naming you as guarantor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /guarantor/status:
     get:
       operationId: getGuarantorStatus
@@ -320,6 +404,176 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminUsersResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users/{uid}:
+    get:
+      operationId: getAdminUserDetail
+      tags: [admin]
+      summary: Full detail for one customer -- KYC photos, extracted identity, and complete financial profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full customer detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserDetail"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No user found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/guarantor-requests:
+    get:
+      operationId: listGuarantorRequests
+      tags: [admin]
+      summary: List digital guarantor requests awaiting or already given an admin decision
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Guarantor requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorRequestsList"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/guarantor-insight:
+    post:
+      operationId: getGuarantorInsight
+      tags: [admin]
+      summary: AI-assisted comparison of a requester and their proposed digital guarantor
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuarantorInsightInput"
+      responses:
+        "200":
+          description: Guarantor insight
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorInsightResult"
+        "400":
+          description: No guarantor request found for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: AI generation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/guarantor-decision:
+    post:
+      operationId: submitGuarantorDecision
+      tags: [admin]
+      summary: Final admin approve/reject decision on a digital guarantor request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuarantorDecisionInput"
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorDecisionResult"
+        "400":
+          description: No guarantor request awaiting admin review for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Missing or invalid Firebase token
           content:
@@ -664,9 +918,11 @@ components:
       properties:
         guarantorUid:
           type: string
+        guarantorName:
+          type: string
         status:
           type: string
-          enum: [pending, approved, declined]
+          enum: [pending, awaiting_admin_review, approved, declined, rejected]
         requestedAt:
           type: ["string", "null"]
           format: date-time
@@ -681,9 +937,11 @@ components:
         - status
         - maxAmount
       properties:
+        requesterName:
+          type: string
         status:
           type: string
-          enum: [pending, approved, declined]
+          enum: [pending, awaiting_admin_review, approved, declined, rejected]
         requestedAt:
           type: ["string", "null"]
           format: date-time
@@ -705,6 +963,51 @@ components:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/IncomingGuarantorRequest"
+    GuarantorRequestInput:
+      type: object
+      required:
+        - guarantor_national_id
+      properties:
+        guarantor_national_id:
+          type: string
+    GuarantorRequestResult:
+      type: object
+      required:
+        - status
+        - guarantor_uid
+        - guarantor_name
+        - max_amount
+      properties:
+        status:
+          type: string
+          enum: [pending]
+        guarantor_uid:
+          type: string
+        guarantor_name:
+          type: string
+        max_amount:
+          type: number
+    GuarantorRespondInput:
+      type: object
+      required:
+        - requester_uid
+        - approve
+      properties:
+        requester_uid:
+          type: string
+        approve:
+          type: boolean
+    GuarantorRespondResult:
+      type: object
+      required:
+        - requester_uid
+        - status
+      properties:
+        requester_uid:
+          type: string
+        status:
+          type: string
+          enum: [awaiting_admin_review, declined]
     AdminUser:
       type: object
       required:
@@ -761,6 +1064,237 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AdminUser"
+    AdminUserKyc:
+      type: object
+      properties:
+        typed_full_name:
+          type: ["string", "null"]
+        typed_national_id:
+          type: ["string", "null"]
+        extracted_full_name:
+          type: ["string", "null"]
+        extracted_national_id:
+          type: ["string", "null"]
+        face_match:
+          type: ["string", "null"]
+        confidence:
+          type: ["string", "null"]
+        ai_reason:
+          type: ["string", "null"]
+        id_photo_readable:
+          type: ["boolean", "null"]
+        selfie_readable:
+          type: ["boolean", "null"]
+        id_front_url:
+          type: ["string", "null"]
+        id_back_url:
+          type: ["string", "null"]
+        selfie_url:
+          type: ["string", "null"]
+    AdminUserFinancial:
+      type: object
+      properties:
+        data_source:
+          type: string
+        monthly_income:
+          type: number
+        employment_status:
+          type: string
+        has_own_business:
+          type: boolean
+        employer_name:
+          type: ["string", "null"]
+        has_bank_account:
+          type: ["boolean", "null"]
+        bank_accounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        declared_financing_companies:
+          type: array
+          items:
+            type: string
+        self_reported_debts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        debt_to_income_percentage:
+          type: ["number", "null"]
+        stacking_flag:
+          type: boolean
+        statement_count:
+          type: integer
+        institution_breakdown:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    AdminUserStatement:
+      type: object
+      properties:
+        statement_id:
+          type: string
+        institution_name:
+          type: ["string", "null"]
+        statement_type:
+          type: ["string", "null"]
+        principal_amount:
+          type: ["number", "null"]
+        monthly_installment:
+          type: ["number", "null"]
+        remaining_balance:
+          type: ["number", "null"]
+        file_url:
+          type: ["string", "null"]
+    AdminUserDetail:
+      type: object
+      required:
+        - uid
+        - name
+        - review_status
+        - kyc
+        - financial
+        - statements
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        national_id:
+          type: ["string", "null"]
+        review_status:
+          type: string
+          enum: [pending, approved, rejected, no_submission]
+        review_reason:
+          type: ["string", "null"]
+        guarantor_uid:
+          type: ["string", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        kyc:
+          $ref: "#/components/schemas/AdminUserKyc"
+        financial:
+          $ref: "#/components/schemas/AdminUserFinancial"
+        statements:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUserStatement"
+    GuarantorRequestSummary:
+      type: object
+      required:
+        - requester_uid
+        - requester_name
+        - status
+      properties:
+        requester_uid:
+          type: string
+        requester_name:
+          type: string
+        requester_national_id:
+          type: ["string", "null"]
+        guarantor_uid:
+          type: ["string", "null"]
+        guarantor_name:
+          type: ["string", "null"]
+        guarantor_national_id:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [awaiting_admin_review, approved, rejected]
+        max_amount:
+          type: ["number", "null"]
+        requested_at:
+          type: ["string", "null"]
+          format: date-time
+        responded_at:
+          type: ["string", "null"]
+          format: date-time
+        requester_debt_to_income_percentage:
+          type: ["number", "null"]
+        requester_stacking_flag:
+          type: boolean
+        guarantor_debt_to_income_percentage:
+          type: ["number", "null"]
+        guarantor_stacking_flag:
+          type: boolean
+    GuarantorRequestsList:
+      type: object
+      required:
+        - request_count
+        - awaiting_count
+        - requests
+      properties:
+        request_count:
+          type: integer
+        awaiting_count:
+          type: integer
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuarantorRequestSummary"
+    GuarantorInsightInput:
+      type: object
+      required:
+        - requester_uid
+      properties:
+        requester_uid:
+          type: string
+    GuarantorInsightResult:
+      type: object
+      required:
+        - requester_uid
+        - guarantor_uid
+        - risk_tier
+        - concerns
+        - recommendation
+        - notes
+      properties:
+        requester_uid:
+          type: string
+        guarantor_uid:
+          type: string
+        risk_tier:
+          type: string
+          enum: ["منخفض", "متوسط", "مرتفع"]
+        concerns:
+          type: array
+          items:
+            type: string
+        recommendation:
+          type: string
+          enum: [approve, reject]
+        notes:
+          type: string
+    GuarantorDecisionInput:
+      type: object
+      required:
+        - requester_uid
+        - decision
+      properties:
+        requester_uid:
+          type: string
+        decision:
+          type: string
+          enum: [approved, rejected]
+        reason:
+          type: ["string", "null"]
+    GuarantorDecisionResult:
+      type: object
+      required:
+        - requester_uid
+        - guarantor_uid
+        - status
+      properties:
+        requester_uid:
+          type: string
+        guarantor_uid:
+          type: string
+        status:
+          type: string
+          enum: [approved, rejected]
     KycDecisionInput:
       type: object
       required:

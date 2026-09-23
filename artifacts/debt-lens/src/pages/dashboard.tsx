@@ -1,10 +1,14 @@
-import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorStatus, GuarantorStatus } from "@workspace/api-client-react";
+import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorStatus, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorStatusQueryKey, GuarantorStatus } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert, ShieldCheck, Users } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert, ShieldCheck, Users, BadgeCheck, Check, X } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 export default function DashboardPage() {
   const { profile } = useAuth();
@@ -71,7 +75,14 @@ function DashboardContent() {
       <div className="bg-primary text-primary-foreground py-10 px-4 md:px-8 border-b-4 border-secondary">
         <div className="container mx-auto max-w-6xl flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold mb-2">أهلاً بك، {profile?.fullName?.split(' ')[0] || 'عميلنا العزيز'}</h1>
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <h1 className="text-3xl font-bold">أهلاً بك، {profile?.fullName?.split(' ')[0] || 'عميلنا العزيز'}</h1>
+              {profile?.reviewStatus === 'approved' && (
+                <span className="inline-flex items-center gap-1 bg-secondary/20 text-secondary text-sm font-medium px-3 py-1 rounded-full">
+                  <BadgeCheck className="w-4 h-4" /> حساب موثّق
+                </span>
+              )}
+            </div>
             <p className="text-primary-foreground/80">إليك ملخص وضعك المالي بناءً على البيانات المقدمة.</p>
           </div>
           <div className="bg-primary-foreground/10 px-6 py-4 rounded-xl backdrop-blur-sm border border-primary-foreground/20 text-center min-w-[200px]">
@@ -163,24 +174,70 @@ function DashboardContent() {
 }
 
 // --- Guarantor Status Card ---
+function guarantorStatusLabel(status: string) {
+  switch (status) {
+    case 'approved': return 'تمت الموافقة';
+    case 'awaiting_admin_review': return 'بانتظار موافقة الإدارة';
+    case 'declined': return 'رفض الكفيل';
+    case 'rejected': return 'رفضته الإدارة';
+    default: return 'قيد الانتظار';
+  }
+}
+
+function guarantorStatusClass(status: string) {
+  switch (status) {
+    case 'approved': return 'bg-green-100 text-green-700';
+    case 'awaiting_admin_review': return 'bg-blue-100 text-blue-700';
+    case 'declined':
+    case 'rejected': return 'bg-red-100 text-red-700';
+    default: return 'bg-yellow-100 text-yellow-700';
+  }
+}
+
 function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorStatus; isLoading: boolean; isError: boolean }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const requestMutation = useRequestGuarantor();
+  const respondMutation = useRespondToGuarantorRequest();
+  const [nationalId, setNationalId] = useState("");
+  const [respondingUid, setRespondingUid] = useState<string | null>(null);
+
+  const invalidateStatus = () => queryClient.invalidateQueries({ queryKey: getGetGuarantorStatusQueryKey() });
+
+  const handleRequest = async () => {
+    if (!nationalId.trim()) return;
+    try {
+      const res = await requestMutation.mutateAsync({ data: { guarantor_national_id: nationalId.trim() } });
+      toast({ title: "تم إرسال الطلب", description: `تم إرسال طلب الكفالة إلى ${res.guarantor_name}.` });
+      setNationalId("");
+      invalidateStatus();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "تعذر إرسال الطلب",
+        description: error?.error || "لم نتمكن من العثور على هذا الشخص أو أنه غير مؤهل ليكون كفيلاً رقمياً.",
+      });
+    }
+  };
+
+  const handleRespond = async (requesterUid: string, approve: boolean) => {
+    setRespondingUid(requesterUid);
+    try {
+      await respondMutation.mutateAsync({ data: { requester_uid: requesterUid, approve } });
+      invalidateStatus();
+    } catch (error) {
+      toast({ variant: "destructive", title: "تعذر تسجيل الرد", description: "يرجى المحاولة مرة أخرى." });
+    } finally {
+      setRespondingUid(null);
+    }
+  };
+
   if (isLoading) return null;
   if (isError || !data) return null;
 
   const { outgoing_request, approved_guarantor_uid, incoming_requests } = data;
   const incomingList = Object.entries(incoming_requests || {});
-
-  if (!outgoing_request && !approved_guarantor_uid && incomingList.length === 0) {
-    return null;
-  }
-
-  const statusLabel = (status: string) =>
-    status === 'approved' ? 'تمت الموافقة' : status === 'declined' ? 'مرفوض' : 'قيد الانتظار';
-
-  const statusClass = (status: string) =>
-    status === 'approved' ? 'bg-green-100 text-green-700' :
-    status === 'declined' ? 'bg-red-100 text-red-700' :
-    'bg-yellow-100 text-yellow-700';
+  const canRequestNewGuarantor = !outgoing_request || outgoing_request.status === 'declined' || outgoing_request.status === 'rejected';
 
   return (
     <Card className="border-secondary/20 bg-secondary/5">
@@ -191,7 +248,7 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
           </div>
           <div>
             <h3 className="font-bold text-primary">الكفيل الرقمي</h3>
-            <p className="text-sm text-muted-foreground">حالة طلبات الكفالة الخاصة بك</p>
+            <p className="text-sm text-muted-foreground">اطلب من عميل موثّق أن يكفلك، أو راجع طلبات الكفالة الواردة إليك</p>
           </div>
         </div>
 
@@ -204,10 +261,31 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
 
         {outgoing_request && !approved_guarantor_uid && (
           <div className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm">
-            <span>طلب الكفالة المُرسَل (بحد أقصى {outgoing_request.maxAmount.toLocaleString()} د.أ)</span>
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusClass(outgoing_request.status)}`}>
-              {statusLabel(outgoing_request.status)}
+            <span>
+              طلب الكفالة إلى {outgoing_request.guarantorName || "الكفيل"} (بحد أقصى {outgoing_request.maxAmount.toLocaleString()} د.أ)
             </span>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${guarantorStatusClass(outgoing_request.status)}`}>
+              {guarantorStatusLabel(outgoing_request.status)}
+            </span>
+          </div>
+        )}
+
+        {canRequestNewGuarantor && !approved_guarantor_uid && (
+          <div className="p-3 bg-background border rounded-lg space-y-2">
+            <Label htmlFor="guarantor-national-id" className="text-sm font-medium">طلب كفيل رقمي جديد</Label>
+            <div className="flex gap-2">
+              <Input
+                id="guarantor-national-id"
+                placeholder="الرقم الوطني للكفيل"
+                value={nationalId}
+                onChange={(e) => setNationalId(e.target.value)}
+                dir="ltr"
+                className="text-right"
+              />
+              <Button onClick={handleRequest} disabled={requestMutation.isPending || !nationalId.trim()} className="shrink-0">
+                {requestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "إرسال الطلب"}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -218,11 +296,34 @@ function GuarantorStatusCard({ data, isLoading, isError }: { data?: GuarantorSta
             </p>
             <div className="space-y-2">
               {incomingList.map(([requesterUid, request]) => (
-                <div key={requesterUid} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm">
-                  <span className="truncate dir-ltr text-xs text-muted-foreground">{requesterUid}</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusClass(request.status)}`}>
-                    {statusLabel(request.status)}
-                  </span>
+                <div key={requesterUid} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg text-sm gap-2">
+                  <span className="truncate">{request.requesterName || "عميل"}</span>
+                  {request.status === 'pending' ? (
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+                        disabled={respondMutation.isPending && respondingUid === requesterUid}
+                        onClick={() => handleRespond(requesterUid, true)}
+                      >
+                        {respondMutation.isPending && respondingUid === requesterUid ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-red-50 text-red-700 hover:bg-red-100 border-red-200"
+                        disabled={respondMutation.isPending && respondingUid === requesterUid}
+                        onClick={() => handleRespond(requesterUid, false)}
+                      >
+                        {respondMutation.isPending && respondingUid === requesterUid ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${guarantorStatusClass(request.status)}`}>
+                      {guarantorStatusLabel(request.status)}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

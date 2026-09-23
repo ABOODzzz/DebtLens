@@ -9,6 +9,7 @@ import type { GuarantorRequestStatusStatus } from './guarantorRequestStatusStatu
 
 export interface GuarantorRequestStatus {
   guarantorUid: string;
+  guarantorName?: string;
   status: GuarantorRequestStatusStatus;
   /** @nullable */
   requestedAt?: Date | null;

@@ -18,12 +18,16 @@ Flow:
 import logging
 import re
 
-import requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from anthropic_client import ANTHROPIC_MODEL, anthropic_client
-from firebase_client import FirebaseUnavailableError, get_current_user, get_firestore_client
+from firebase_client import (
+    FirebaseUnavailableError,
+    get_current_user,
+    get_firestore_client,
+    get_storage_bucket,
+)
 
 logger = logging.getLogger("debtlens")
 
@@ -37,34 +41,44 @@ _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _KYC_MAX_TOKENS = 16000
 
 
+class KycProfileInput(BaseModel):
+    fullName: str
+    nationalId: str | None = None
+
+
 class KycSubmitRequest(BaseModel):
-    id_photo_url: str
-    selfie_url: str
-    full_name: str
-    national_id: str | None = None
+    profile: KycProfileInput
+    photoPaths: list[str]  # [idFrontPath, idBackPath, selfiePath] -- Firebase Storage paths
 
 
-def _download_image(url: str) -> tuple[bytes, str] | None:
+def _download_storage_image(path: str) -> tuple[bytes, str] | None:
     """
-    Download an image and return (bytes, media_type). Returns None on any
-    failure (network error, non-2xx, empty body, too large) -- callers treat
-    that as "download failed" and fall back to pending review.
+    Download an image from Firebase Storage by path and return
+    (bytes, media_type). Returns None on any failure (missing blob, storage
+    unavailable, empty body, too large) -- callers treat that as "download
+    failed" and fall back to pending review.
     """
     try:
-        response = requests.get(url, timeout=_IMAGE_DOWNLOAD_TIMEOUT_SECONDS)
-        response.raise_for_status()
-    except Exception as exc:  # noqa: BLE001 - any network failure is a soft failure here
-        logger.warning("KYC image download failed for %s: %s", url, exc)
+        bucket = get_storage_bucket()
+        blob = bucket.blob(path)
+        if not blob.exists():
+            logger.warning("KYC image blob does not exist: %s", path)
+            return None
+        content = blob.download_as_bytes()
+    except FirebaseUnavailableError as exc:
+        logger.warning("KYC image download failed for %s: %s", path, exc)
+        return None
+    except Exception as exc:  # noqa: BLE001 - any storage failure is a soft failure here
+        logger.warning("KYC image download failed for %s: %s", path, exc)
         return None
 
-    content = response.content
     if not content or len(content) > _MAX_IMAGE_BYTES:
-        logger.warning("KYC image at %s is empty or too large (%s bytes)", url, len(content or b""))
+        logger.warning("KYC image at %s is empty or too large (%s bytes)", path, len(content or b""))
         return None
 
-    media_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
+    media_type = (blob.content_type or "").split(";")[0].strip().lower()
     if media_type not in _ALLOWED_MEDIA_TYPES:
-        # Best-effort guess when the server didn't send a usable content type.
+        # Best-effort guess when Storage didn't record a usable content type.
         media_type = "image/jpeg"
 
     return content, media_type
@@ -275,14 +289,23 @@ def kyc_status(user: dict = Depends(get_current_user)):
 def submit_kyc(body: KycSubmitRequest, user: dict = Depends(get_current_user)):
     uid = user["uid"]
 
+    if len(body.photoPaths) != 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="photoPaths must contain exactly 3 entries: [idFrontPath, idBackPath, selfiePath].",
+        )
+    id_front_path, id_back_path, selfie_path = body.photoPaths
+    full_name = body.profile.fullName
+    national_id = body.profile.nationalId
+
     if anthropic_client is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Identity verification is currently unavailable.",
         )
 
-    id_photo = _download_image(body.id_photo_url)
-    selfie = _download_image(body.selfie_url)
+    id_photo = _download_storage_image(id_front_path)
+    selfie = _download_storage_image(selfie_path)
 
     verdict: dict | None = None
     verdict_error: str | None = None
@@ -300,7 +323,7 @@ def submit_kyc(body: KycSubmitRequest, user: dict = Depends(get_current_user)):
             review_reason = "تعذر إتمام التحقق الآلي من الهوية؛ الحالة قيد المراجعة اليدوية."
             verdict_error = "verdict_generation_failed"
         else:
-            review_status, review_reason = _decide_review(body.full_name, verdict)
+            review_status, review_reason = _decide_review(full_name, verdict)
 
     try:
         db = get_firestore_client()
@@ -314,10 +337,11 @@ def submit_kyc(body: KycSubmitRequest, user: dict = Depends(get_current_user)):
 
     user_doc_ref = db.collection("users").document(uid)
     kyc_verification = {
-        "typedFullName": body.full_name,
-        "typedNationalId": body.national_id,
-        "idPhotoUrl": body.id_photo_url,
-        "selfieUrl": body.selfie_url,
+        "typedFullName": full_name,
+        "typedNationalId": national_id,
+        "idFrontPath": id_front_path,
+        "idBackPath": id_back_path,
+        "selfiePath": selfie_path,
         "faceMatch": verdict["face_match"] if verdict else None,
         "confidence": verdict["confidence"] if verdict else None,
         "aiReason": verdict.get("reason") if verdict else None,
@@ -344,8 +368,8 @@ def submit_kyc(body: KycSubmitRequest, user: dict = Depends(get_current_user)):
             "uid": uid,
             "reviewStatus": review_status,
             "reviewReason": review_reason,
-            "typedFullName": body.full_name,
-            "typedNationalId": body.national_id,
+            "typedFullName": full_name,
+            "typedNationalId": national_id,
             "verdict": verdict,
             "error": verdict_error,
             "createdAt": firestore.SERVER_TIMESTAMP,
@@ -353,14 +377,6 @@ def submit_kyc(body: KycSubmitRequest, user: dict = Depends(get_current_user)):
     )
 
     return {
-        "review_status": review_status,
+        "reviewStatus": review_status,
         "reason": review_reason,
-        "verification": {
-            "face_match": verdict.get("face_match") if verdict else None,
-            "confidence": verdict.get("confidence") if verdict else None,
-            "id_photo_readable": verdict.get("id_photo_readable") if verdict else None,
-            "selfie_readable": verdict.get("selfie_readable") if verdict else None,
-            "extracted_full_name": verdict.get("extracted_full_name") if verdict else None,
-            "extracted_national_id": verdict.get("extracted_national_id") if verdict else None,
-        },
     }

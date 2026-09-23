@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminUserDetail,
   AdminUsersResponse,
   AdviceResult,
   AnalyzeInput,
@@ -27,6 +28,15 @@ import type {
   ConsolidationRequestResult,
   ErrorResponse,
   FinancialSummary,
+  GuarantorDecisionInput,
+  GuarantorDecisionResult,
+  GuarantorInsightInput,
+  GuarantorInsightResult,
+  GuarantorRequestInput,
+  GuarantorRequestResult,
+  GuarantorRequestsList,
+  GuarantorRespondInput,
+  GuarantorRespondResult,
   GuarantorStatus,
   Headline,
   HealthStatus,
@@ -770,6 +780,184 @@ export const useAssessLoanEligibility = <TError = ErrorType<ErrorResponse>,
       return useMutation(getAssessLoanEligibilityMutationOptions(options));
     }
 
+export const getRequestGuarantorUrl = () => {
+
+
+
+
+  return `/api/guarantor/request`
+}
+
+/**
+ * Looks the person up by national ID, checks they're verified and in good financial standing, then creates a pending request.
+ * @summary Request another verified customer to act as a digital guarantor
+ */
+export const requestGuarantor = async (guarantorRequestInput: GuarantorRequestInput, options?: Parameters<typeof customFetch>[1]): Promise<GuarantorRequestResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GuarantorRequestResult>(getRequestGuarantorUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(guarantorRequestInput)
+  }
+);}
+
+
+
+
+
+export const getRequestGuarantorMutationKey = () => ['requestGuarantor'] as const;
+
+export const getRequestGuarantorMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestGuarantor>>, TError,RequestGuarantorMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestGuarantor>>, TError,RequestGuarantorMutationVariables, TContext> => {
+
+const mutationKey = getRequestGuarantorMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestGuarantor>>, RequestGuarantorMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestGuarantor(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestGuarantorMutationResult = NonNullable<Awaited<ReturnType<typeof requestGuarantor>>>
+    export type RequestGuarantorMutationBody = BodyType<GuarantorRequestInput>
+    export type RequestGuarantorMutationError = ErrorType<ErrorResponse>
+    export type RequestGuarantorMutationVariables = {data: BodyType<GuarantorRequestInput>}
+
+    /**
+ * @summary Request another verified customer to act as a digital guarantor
+ */
+export const useRequestGuarantor = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestGuarantor>>, TError,RequestGuarantorMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestGuarantor>>,
+        TError,
+        RequestGuarantorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRequestGuarantorMutationOptions(options));
+    }
+
+export const getRespondToGuarantorRequestUrl = () => {
+
+
+
+
+  return `/api/guarantor/respond`
+}
+
+/**
+ * Approving raises the request to awaiting_admin_review; the guarantee only activates once an admin makes the final decision.
+ * @summary Approve or decline an incoming guarantor request
+ */
+export const respondToGuarantorRequest = async (guarantorRespondInput: GuarantorRespondInput, options?: Parameters<typeof customFetch>[1]): Promise<GuarantorRespondResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GuarantorRespondResult>(getRespondToGuarantorRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(guarantorRespondInput)
+  }
+);}
+
+
+
+
+
+export const getRespondToGuarantorRequestMutationKey = () => ['respondToGuarantorRequest'] as const;
+
+export const getRespondToGuarantorRequestMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof respondToGuarantorRequest>>, TError,RespondToGuarantorRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof respondToGuarantorRequest>>, TError,RespondToGuarantorRequestMutationVariables, TContext> => {
+
+const mutationKey = getRespondToGuarantorRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof respondToGuarantorRequest>>, RespondToGuarantorRequestMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  respondToGuarantorRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RespondToGuarantorRequestMutationResult = NonNullable<Awaited<ReturnType<typeof respondToGuarantorRequest>>>
+    export type RespondToGuarantorRequestMutationBody = BodyType<GuarantorRespondInput>
+    export type RespondToGuarantorRequestMutationError = ErrorType<ErrorResponse>
+    export type RespondToGuarantorRequestMutationVariables = {data: BodyType<GuarantorRespondInput>}
+
+    /**
+ * @summary Approve or decline an incoming guarantor request
+ */
+export const useRespondToGuarantorRequest = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof respondToGuarantorRequest>>, TError,RespondToGuarantorRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof respondToGuarantorRequest>>,
+        TError,
+        RespondToGuarantorRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRespondToGuarantorRequestMutationOptions(options));
+    }
+
 export const getGetGuarantorStatusUrl = () => {
 
 
@@ -924,6 +1112,336 @@ export function useListAdminUsers<TData = Awaited<ReturnType<typeof listAdminUse
 
 
 
+
+export const getGetAdminUserDetailUrl = (uid: string,) => {
+
+
+
+
+  return `/api/admin/users/${uid}`
+}
+
+/**
+ * @summary Full detail for one customer -- KYC photos, extracted identity, and complete financial profile
+ */
+export const getAdminUserDetail = async (uid: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminUserDetail> => {
+
+  return customFetch<AdminUserDetail>(getGetAdminUserDetailUrl(uid),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminUserDetailQueryKey = (uid: string,) => {
+    return [
+    `/api/admin/users/${uid}`
+    ] as const;
+    }
+
+
+export const getGetAdminUserDetailQueryOptions = <TData = Awaited<ReturnType<typeof getAdminUserDetail>>, TError = ErrorType<ErrorResponse>>(uid: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminUserDetail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminUserDetailQueryKey(uid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminUserDetail>>> = ({ signal }) => getAdminUserDetail(uid, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: uid !== null && uid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminUserDetail>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminUserDetailQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminUserDetail>>>
+export type GetAdminUserDetailQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Full detail for one customer -- KYC photos, extracted identity, and complete financial profile
+ */
+
+export function useGetAdminUserDetail<TData = Awaited<ReturnType<typeof getAdminUserDetail>>, TError = ErrorType<ErrorResponse>>(
+ uid: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminUserDetail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminUserDetailQueryOptions(uid,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListGuarantorRequestsUrl = () => {
+
+
+
+
+  return `/api/admin/guarantor-requests`
+}
+
+/**
+ * @summary List digital guarantor requests awaiting or already given an admin decision
+ */
+export const listGuarantorRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<GuarantorRequestsList> => {
+
+  return customFetch<GuarantorRequestsList>(getListGuarantorRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGuarantorRequestsQueryKey = () => {
+    return [
+    `/api/admin/guarantor-requests`
+    ] as const;
+    }
+
+
+export const getListGuarantorRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listGuarantorRequests>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGuarantorRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGuarantorRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGuarantorRequests>>> = ({ signal }) => listGuarantorRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGuarantorRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGuarantorRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listGuarantorRequests>>>
+export type ListGuarantorRequestsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List digital guarantor requests awaiting or already given an admin decision
+ */
+
+export function useListGuarantorRequests<TData = Awaited<ReturnType<typeof listGuarantorRequests>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGuarantorRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGuarantorRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetGuarantorInsightUrl = () => {
+
+
+
+
+  return `/api/admin/guarantor-insight`
+}
+
+/**
+ * @summary AI-assisted comparison of a requester and their proposed digital guarantor
+ */
+export const getGuarantorInsight = async (guarantorInsightInput: GuarantorInsightInput, options?: Parameters<typeof customFetch>[1]): Promise<GuarantorInsightResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GuarantorInsightResult>(getGetGuarantorInsightUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(guarantorInsightInput)
+  }
+);}
+
+
+
+
+
+export const getGetGuarantorInsightMutationKey = () => ['getGuarantorInsight'] as const;
+
+export const getGetGuarantorInsightMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getGuarantorInsight>>, TError,GetGuarantorInsightMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getGuarantorInsight>>, TError,GetGuarantorInsightMutationVariables, TContext> => {
+
+const mutationKey = getGetGuarantorInsightMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getGuarantorInsight>>, GetGuarantorInsightMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  getGuarantorInsight(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetGuarantorInsightMutationResult = NonNullable<Awaited<ReturnType<typeof getGuarantorInsight>>>
+    export type GetGuarantorInsightMutationBody = BodyType<GuarantorInsightInput>
+    export type GetGuarantorInsightMutationError = ErrorType<ErrorResponse>
+    export type GetGuarantorInsightMutationVariables = {data: BodyType<GuarantorInsightInput>}
+
+    /**
+ * @summary AI-assisted comparison of a requester and their proposed digital guarantor
+ */
+export const useGetGuarantorInsight = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getGuarantorInsight>>, TError,GetGuarantorInsightMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getGuarantorInsight>>,
+        TError,
+        GetGuarantorInsightMutationVariables,
+        TContext
+      > => {
+      return useMutation(getGetGuarantorInsightMutationOptions(options));
+    }
+
+export const getSubmitGuarantorDecisionUrl = () => {
+
+
+
+
+  return `/api/admin/guarantor-decision`
+}
+
+/**
+ * @summary Final admin approve/reject decision on a digital guarantor request
+ */
+export const submitGuarantorDecision = async (guarantorDecisionInput: GuarantorDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<GuarantorDecisionResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GuarantorDecisionResult>(getSubmitGuarantorDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(guarantorDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitGuarantorDecisionMutationKey = () => ['submitGuarantorDecision'] as const;
+
+export const getSubmitGuarantorDecisionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitGuarantorDecision>>, TError,SubmitGuarantorDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitGuarantorDecision>>, TError,SubmitGuarantorDecisionMutationVariables, TContext> => {
+
+const mutationKey = getSubmitGuarantorDecisionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitGuarantorDecision>>, SubmitGuarantorDecisionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  submitGuarantorDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitGuarantorDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof submitGuarantorDecision>>>
+    export type SubmitGuarantorDecisionMutationBody = BodyType<GuarantorDecisionInput>
+    export type SubmitGuarantorDecisionMutationError = ErrorType<ErrorResponse>
+    export type SubmitGuarantorDecisionMutationVariables = {data: BodyType<GuarantorDecisionInput>}
+
+    /**
+ * @summary Final admin approve/reject decision on a digital guarantor request
+ */
+export const useSubmitGuarantorDecision = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitGuarantorDecision>>, TError,SubmitGuarantorDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitGuarantorDecision>>,
+        TError,
+        SubmitGuarantorDecisionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitGuarantorDecisionMutationOptions(options));
+    }
 
 export const getSubmitKycDecisionUrl = () => {
 

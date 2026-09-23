@@ -55,20 +55,26 @@ function WizardRoute({ component: Component }: { component: React.ComponentType 
   const { user, loading, profile, isAdmin } = useAuth();
   const [_, setLocation] = useLocation();
 
+  // A rejected customer must be able to re-enter the wizard to fix and
+  // resubmit their info, even though their profile was already marked
+  // complete the first time through.
+  const canReenterForResubmission = profile?.reviewStatus === 'rejected';
+  const blockedByCompletion = !!profile?.profileCompleted && !canReenterForResubmission;
+
   useEffect(() => {
     if (!loading) {
       if (!user) {
         setLocation('/login');
       } else if (isAdmin) {
         setLocation('/admin');
-      } else if (profile?.profileCompleted) {
+      } else if (blockedByCompletion) {
         setLocation('/dashboard');
       }
     }
-  }, [user, loading, profile, isAdmin, setLocation]);
+  }, [user, loading, blockedByCompletion, isAdmin, setLocation]);
 
   if (loading) return <LoadingScreen />;
-  if (!user || isAdmin || profile?.profileCompleted) return null;
+  if (!user || isAdmin || blockedByCompletion) return null;
 
   return <Component />;
 }
