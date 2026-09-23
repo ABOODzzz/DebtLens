@@ -9,21 +9,10 @@
 {% endblock %}
 {% block content %}
 <div class="card">
-  <h1 style="margin-top:0;">لوحة التحكم المالية</h1>
+  <h1 id="dashboard-greeting" style="margin-top:0;">أهلًا بك في DebtLens</h1>
   <p class="muted">
-    هذه الصفحة هي نقطة الانطلاق للوحة التحكم بعد تسجيل الدخول: ملخص الدخل، الديون،
-    وحالة مراجعة الهوية. سيتم ربطها بالبيانات الفعلية عبر واجهة FastAPI في الخطوات التالية.
-  </p>
-</div>
-<div class="card">
-  <h2 style="margin-top:0; font-size:1.1rem;">حالة الخادم</h2>
-  <p class="muted">
-    Firebase Admin:
-    {% if firebase_enabled %}
-      <span class="badge" style="background:#e4f4e7;color:#1c7a37;">متصل</span>
-    {% else %}
-      <span class="badge badge-warn">غير مُعد (وضع محدود)</span>
-    {% endif %}
+    هذه لوحتك المالية الشخصية: ملخص دخلك، ديونك، وحالة مراجعة هويتك ستظهر هنا بمجرد
+    ربط بياناتك الفعلية عبر واجهة FastAPI في الخطوات التالية.
   </p>
 </div>
 
@@ -58,6 +47,7 @@
     const bar = document.getElementById("user-bar");
     bar.style.display = "flex";
     document.getElementById("user-email").textContent = user.email || user.uid;
+    document.getElementById("dashboard-greeting").textContent = `أهلًا بك، ${user.email || "بك"}`;
   });
 
   document.getElementById("logout-btn").addEventListener("click", async () => {
