@@ -363,6 +363,41 @@ _LOAN_ASSESSMENT_MAX_TOKENS = 1024
 _LOAN_ASSESSMENT_DTI_CEILING_PERCENT = 45.0
 _RISK_TIERS_ARABIC = {"منخفض", "متوسط", "مرتفع"}
 
+# When a Digital Guarantor (see guarantor.py) is backing the request, the
+# hard debt-to-income ceiling is relaxed slightly -- this is the concrete,
+# server-enforced effect of having a guarantor, on top of Claude being asked
+# to consider a friendlier rate.
+_GUARANTOR_DTI_CEILING_PERCENT = 50.0
+
+
+def _guarantor_context(profile: dict) -> dict | None:
+    """
+    If the applicant has an approved Digital Guarantor, re-validate that
+    person still qualifies (their situation may have changed since they
+    approved) before letting the boost apply. Never trust a stale approval.
+    """
+    guarantor_uid = profile.get("guarantor_uid")
+    if not guarantor_uid:
+        return None
+
+    from guarantor import GUARANTOR_BACKED_MAX_AMOUNT, GUARANTOR_MAX_DTI_PERCENT
+
+    try:
+        guarantor_profile = get_user_financial_profile(guarantor_uid)
+    except FirebaseUnavailableError:
+        return None
+
+    if guarantor_profile["data_source"] != "verified":
+        return None
+    dti = guarantor_profile["debt_to_income_percentage"]
+    if guarantor_profile["stacking_flag"] or (dti is not None and dti >= GUARANTOR_MAX_DTI_PERCENT):
+        return None
+
+    return {
+        "guarantor_dti_percentage": dti or 0.0,
+        "max_backed_amount": GUARANTOR_BACKED_MAX_AMOUNT,
+    }
+
 
 def _loan_assessment_data(profile: dict) -> dict:
     """
@@ -459,13 +494,31 @@ def _credit_score_band(score: int) -> tuple[str, str]:
     return _CREDIT_SCORE_BANDS[-1][1], _CREDIT_SCORE_BANDS[-1][2]
 
 
-def _generate_loan_assessment_via_claude(assessment_data: dict, business_info: dict, employment_status: str, has_own_business: bool) -> dict:
+def _generate_loan_assessment_via_claude(
+    assessment_data: dict,
+    business_info: dict,
+    employment_status: str,
+    has_own_business: bool,
+    guarantor_context: dict | None = None,
+) -> dict:
     headlines = "\n".join(f"- {h}" for h in market_data.get_market_headlines())
     business_line = (
         f"لدى المستخدم مشروعه الخاص. تفاصيل إضافية: {business_info}"
         if has_own_business
         else "لا يمتلك المستخدم مشروعًا خاصًا."
     )
+
+    if guarantor_context:
+        guarantor_line = (
+            f"لدى العميل كفيل رقمي موافق ومُوثّق عند DebtLens بنفسه (نسبة الدين إلى الدخل الخاصة بالكفيل: "
+            f"{guarantor_context['guarantor_dti_percentage']}%). الكفيل يتحمل مسؤولية سداد القسط حتى سقف "
+            f"{guarantor_context['max_backed_amount']} دينار إذا تعثر العميل. لهذا السبب يمكنك تخفيف نسبة الفائدة "
+            "قليلاً مقارنة بعميل بدون كفيل، ضمن الحد الآمن لنسبة الدين إلى الدخل المذكور أدناه."
+        )
+    else:
+        guarantor_line = "لا يوجد كفيل رقمي لهذا العميل."
+
+    dti_ceiling = _GUARANTOR_DTI_CEILING_PERCENT if guarantor_context else _LOAN_ASSESSMENT_DTI_CEILING_PERCENT
 
     prompt = f"""أنت محلل ائتمان في مؤسسة تمويل أردنية، تقيّم أهلية عميل لقرض جديد.
 
@@ -476,11 +529,12 @@ def _generate_loan_assessment_via_claude(assessment_data: dict, business_info: d
 - عدد جهات التمويل النشطة حاليًا: {assessment_data['financing_institutions_count']}
 - الحالة الوظيفية: {employment_status}
 - {business_line}
+- {guarantor_line}
 
 مؤشرات السوق الأردني الحالية:
 {headlines}
 
-قاعدة صارمة يجب احترامها دائمًا: قسط أي قرض جديد يجب ألا يرفع نسبة الدين الإجمالية إلى الدخل (الالتزامات الحالية + القسط الجديد، مقسومة على الدخل الشهري) فوق ما يقارب 40-45%. \
+قاعدة صارمة يجب احترامها دائمًا: قسط أي قرض جديد يجب ألا يرفع نسبة الدين الإجمالية إلى الدخل (الالتزامات الحالية + القسط الجديد، مقسومة على الدخل الشهري) فوق ما يقارب {dti_ceiling}%. \
 إذا كانت نسبة الدين الحالية قريبة من هذا الحد أو تجاوزته، أو كان الدخل غير كافٍ أو غير مستقر، فالعميل غير مؤهل حاليًا -- في هذه الحالة لا تقترح أي مبلغ إطلاقًا، واشرح بوضوح أن السبب هو تجاوز الحد الآمن، وانصح بسداد جزء من الديون الحالية أولاً بدلاً من اقتراح قرض جديد.
 
 بالإضافة إلى ذلك، احسب "درجة ائتمانية" عامة للعميل (credit_score) على مقياس عالمي مألوف من 300 إلى 850 (كما في أنظمة التصنيف الائتماني المعروفة)، حيث 300 هي الأضعف و850 هي الأفضل. \
@@ -509,13 +563,14 @@ def _generate_loan_assessment_via_claude(assessment_data: dict, business_info: d
     return _parse_loan_assessment_json(text)
 
 
-def _enforce_dti_ceiling(verdict: dict, assessment_data: dict) -> dict:
+def _enforce_dti_ceiling(verdict: dict, assessment_data: dict, dti_ceiling_percent: float = _LOAN_ASSESSMENT_DTI_CEILING_PERCENT) -> dict:
     """
     Never trust the model's own arithmetic or its self-reported eligibility
     for the one thing that actually matters here: recompute the installment
     and total repayment from the amortization formula, then recheck the
     resulting debt-to-income ratio against the hard ceiling before
-    finalizing eligibility.
+    finalizing eligibility. `dti_ceiling_percent` is relaxed when a
+    validated Digital Guarantor is backing the request.
     """
     income = assessment_data["monthly_income"]
 
@@ -550,7 +605,7 @@ def _enforce_dti_ceiling(verdict: dict, assessment_data: dict) -> dict:
         (assessment_data["current_monthly_obligations"] + monthly_installment) / income
     ) * 100
 
-    if projected_dti > _LOAN_ASSESSMENT_DTI_CEILING_PERCENT:
+    if projected_dti > dti_ceiling_percent:
         verdict["eligible"] = False
         verdict["recommended_amount"] = None
         verdict["interest_rate"] = None
@@ -578,6 +633,7 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
     _require_anthropic()
 
     assessment_data = _loan_assessment_data(profile)
+    guarantor_context = _guarantor_context(profile)
 
     try:
         verdict = _generate_loan_assessment_via_claude(
@@ -585,6 +641,7 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
             business_info=profile["profile"]["business_info"],
             employment_status=profile["profile"]["employment_status"],
             has_own_business=profile["profile"]["has_own_business"],
+            guarantor_context=guarantor_context,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("AI loan assessment generation failed: %s", exc)
@@ -593,7 +650,8 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
             detail="Failed to generate a loan assessment right now. Please try again shortly.",
         ) from exc
 
-    verdict = _enforce_dti_ceiling(verdict, assessment_data)
+    dti_ceiling = _GUARANTOR_DTI_CEILING_PERCENT if guarantor_context else _LOAN_ASSESSMENT_DTI_CEILING_PERCENT
+    verdict = _enforce_dti_ceiling(verdict, assessment_data, dti_ceiling_percent=dti_ceiling)
 
     if verdict["credit_score"] is None:
         verdict["credit_score"] = _fallback_credit_score(assessment_data, verdict["eligible"])
@@ -604,6 +662,7 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
         "risk_tier": verdict["risk_tier"],
         "credit_score": verdict["credit_score"],
         "credit_score_label": credit_score_label,
+        "guarantor_backed": guarantor_context is not None,
         "credit_score_color": credit_score_color,
         "recommended_amount": verdict["recommended_amount"],
         "interest_rate": verdict["interest_rate"],
