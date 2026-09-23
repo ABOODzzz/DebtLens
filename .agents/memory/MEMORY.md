@@ -4,3 +4,4 @@
 - [DebtLens finance contract tests](debtlens-finance-contract-tests.md) — pytest contract test checks /analyze, /restructure, /advice against openapi.yaml and the dashboard dialog fields; extend it for new response fields.
 - [DebtLens eligibility contract & method mismatch](debtlens-eligibility-contract-and-method-mismatch.md) — contract tests must use the client's real HTTP method, not the route's; watch for 3.0-style `nullable: true` in the 3.1 spec.
 - [DebtLens guarantor network model](debtlens-guarantor-network-model.md) — many-to-many relationships live in `guarantorRelationships` docs, never a field on the user; caps + admin-only approval + shared `notifications` collection.
+- [DebtLens loan application flow](debtlens-loan-application-flow.md) — Postgres `loan_applications` cross-linked to Firestore `guarantorRelationships`; status derived deterministically from DTI ceilings, not AI.

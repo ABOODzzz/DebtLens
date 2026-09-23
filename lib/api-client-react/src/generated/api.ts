@@ -25,6 +25,7 @@ import type {
   AdviceResult,
   AnalyzeInput,
   AnalyzeResult,
+  AttachGuarantorInput,
   ConsolidationRequestResult,
   ErrorResponse,
   FinancialSummary,
@@ -44,6 +45,8 @@ import type {
   KycDecisionResult,
   KycSubmitInput,
   KycSubmitResponse,
+  LoanApplication,
+  LoanApplicationInput,
   LoanEligibilityResult,
   MarkAllNotificationsReadResult,
   MarkNotificationReadInput,
@@ -782,6 +785,260 @@ export const useAssessLoanEligibility = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getAssessLoanEligibilityMutationOptions(options));
+    }
+
+export const getSubmitLoanApplicationUrl = () => {
+
+
+
+
+  return `/api/loan-application`
+}
+
+/**
+ * Runs the AI eligibility assessment and persists an application record; when the applicant's DTI only qualifies with a digital guarantor, the application is created with status awaiting_guarantor instead of being rejected outright.
+ * @summary Submit a new financing application
+ */
+export const submitLoanApplication = async (loanApplicationInput: LoanApplicationInput, options?: Parameters<typeof customFetch>[1]): Promise<LoanApplication> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LoanApplication>(getSubmitLoanApplicationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(loanApplicationInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitLoanApplicationMutationKey = () => ['submitLoanApplication'] as const;
+
+export const getSubmitLoanApplicationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitLoanApplication>>, TError,SubmitLoanApplicationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitLoanApplication>>, TError,SubmitLoanApplicationMutationVariables, TContext> => {
+
+const mutationKey = getSubmitLoanApplicationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitLoanApplication>>, SubmitLoanApplicationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  submitLoanApplication(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitLoanApplicationMutationResult = NonNullable<Awaited<ReturnType<typeof submitLoanApplication>>>
+    export type SubmitLoanApplicationMutationBody = BodyType<LoanApplicationInput>
+    export type SubmitLoanApplicationMutationError = ErrorType<ErrorResponse>
+    export type SubmitLoanApplicationMutationVariables = {data: BodyType<LoanApplicationInput>}
+
+    /**
+ * @summary Submit a new financing application
+ */
+export const useSubmitLoanApplication = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitLoanApplication>>, TError,SubmitLoanApplicationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitLoanApplication>>,
+        TError,
+        SubmitLoanApplicationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitLoanApplicationMutationOptions(options));
+    }
+
+export const getGetCurrentLoanApplicationUrl = () => {
+
+
+
+
+  return `/api/loan-application`
+}
+
+/**
+ * @summary Get the applicant's most recent loan application
+ */
+export const getCurrentLoanApplication = async ( options?: Parameters<typeof customFetch>[1]): Promise<LoanApplication> => {
+
+  return customFetch<LoanApplication>(getGetCurrentLoanApplicationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentLoanApplicationQueryKey = () => {
+    return [
+    `/api/loan-application`
+    ] as const;
+    }
+
+
+export const getGetCurrentLoanApplicationQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentLoanApplication>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentLoanApplication>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentLoanApplicationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentLoanApplication>>> = ({ signal }) => getCurrentLoanApplication({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentLoanApplication>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentLoanApplicationQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentLoanApplication>>>
+export type GetCurrentLoanApplicationQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the applicant's most recent loan application
+ */
+
+export function useGetCurrentLoanApplication<TData = Awaited<ReturnType<typeof getCurrentLoanApplication>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentLoanApplication>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentLoanApplicationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAttachGuarantorToApplicationUrl = () => {
+
+
+
+
+  return `/api/loan-application/attach-guarantor`
+}
+
+/**
+ * @summary Link a just-requested digital guarantor relationship to an awaiting_guarantor application
+ */
+export const attachGuarantorToApplication = async (attachGuarantorInput: AttachGuarantorInput, options?: Parameters<typeof customFetch>[1]): Promise<LoanApplication> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LoanApplication>(getAttachGuarantorToApplicationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(attachGuarantorInput)
+  }
+);}
+
+
+
+
+
+export const getAttachGuarantorToApplicationMutationKey = () => ['attachGuarantorToApplication'] as const;
+
+export const getAttachGuarantorToApplicationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof attachGuarantorToApplication>>, TError,AttachGuarantorToApplicationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof attachGuarantorToApplication>>, TError,AttachGuarantorToApplicationMutationVariables, TContext> => {
+
+const mutationKey = getAttachGuarantorToApplicationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof attachGuarantorToApplication>>, AttachGuarantorToApplicationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  attachGuarantorToApplication(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AttachGuarantorToApplicationMutationResult = NonNullable<Awaited<ReturnType<typeof attachGuarantorToApplication>>>
+    export type AttachGuarantorToApplicationMutationBody = BodyType<AttachGuarantorInput>
+    export type AttachGuarantorToApplicationMutationError = ErrorType<ErrorResponse>
+    export type AttachGuarantorToApplicationMutationVariables = {data: BodyType<AttachGuarantorInput>}
+
+    /**
+ * @summary Link a just-requested digital guarantor relationship to an awaiting_guarantor application
+ */
+export const useAttachGuarantorToApplication = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof attachGuarantorToApplication>>, TError,AttachGuarantorToApplicationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof attachGuarantorToApplication>>,
+        TError,
+        AttachGuarantorToApplicationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAttachGuarantorToApplicationMutationOptions(options));
     }
 
 export const getRequestGuarantorUrl = () => {

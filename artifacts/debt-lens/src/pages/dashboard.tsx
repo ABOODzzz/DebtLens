@@ -1,11 +1,12 @@
-import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorNetwork, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorNetworkQueryKey, GuarantorNetwork, GuarantorRelationshipSummary } from "@workspace/api-client-react";
+import { useGetFinancialSummary, useAnalyzeFinances, useGetRestructurePlan, useGetAdvice, useRequestConsolidation, useAssessLoanEligibility, useGetGuarantorNetwork, useRequestGuarantor, useRespondToGuarantorRequest, getGetGuarantorNetworkQueryKey, GuarantorNetwork, GuarantorRelationshipSummary, useSubmitLoanApplication, useGetCurrentLoanApplication, getGetCurrentLoanApplicationQueryKey, LoanApplication } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert, ShieldCheck, Users, BadgeCheck, Check, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { AlertCircle, LineChart, PieChart, Sparkles, Building, ArrowRightLeft, Loader2, CheckCircle2, ShieldAlert, ShieldCheck, Users, BadgeCheck, Check, X, Wallet } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -111,6 +112,8 @@ function DashboardContent() {
           <KpiCard title="عدد القروض النشطة" value={summary.activeLoansCount} unit="" isNumber />
         </div>
 
+        <LoanApplicationCard guarantorNetwork={guarantorQuery.data} />
+
         <GuarantorStatusCard
           data={guarantorQuery.data}
           isLoading={guarantorQuery.isLoading}
@@ -170,6 +173,272 @@ function DashboardContent() {
       {activeDialog === 'consolidation' && <ConsolidationDialog onClose={() => setActiveDialog(null)} />}
       {activeDialog === 'eligibility' && <EligibilityDialog onClose={() => setActiveDialog(null)} />}
     </div>
+  );
+}
+
+// --- Loan Application Card & Wizard ---
+function loanApplicationStatusLabel(status: string) {
+  switch (status) {
+    case 'submitted': return 'تم الإرسال، قيد المراجعة النهائية';
+    case 'awaiting_guarantor': return 'بانتظار كفيل رقمي';
+    case 'rejected': return 'غير مؤهل حالياً';
+    default: return status;
+  }
+}
+
+function loanApplicationStatusClass(status: string) {
+  switch (status) {
+    case 'submitted': return 'bg-green-100 text-green-700';
+    case 'awaiting_guarantor': return 'bg-yellow-100 text-yellow-700';
+    case 'rejected': return 'bg-red-100 text-red-700';
+    default: return 'bg-muted text-muted-foreground';
+  }
+}
+
+function LoanApplicationCard({ guarantorNetwork }: { guarantorNetwork?: GuarantorNetwork }) {
+  const applicationQuery = useGetCurrentLoanApplication();
+  const [wizardOpen, setWizardOpen] = useState(false);
+
+  const hasApplication = !applicationQuery.isError && !!applicationQuery.data;
+  const application = applicationQuery.data;
+
+  if (applicationQuery.isLoading) {
+    return (
+      <Card className="border-secondary/30">
+        <CardContent className="p-6 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-secondary" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!hasApplication) {
+    return (
+      <>
+        <Card className="border-secondary bg-secondary/5 overflow-hidden">
+          <CardContent className="p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-secondary/20 flex items-center justify-center text-secondary shrink-0">
+                <Wallet className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="font-bold text-xl text-primary mb-1">جاهز لتمويل جديد؟</h3>
+                <p className="text-sm text-muted-foreground">قدّم طلبك الآن وسنقيّم أهليتك فوراً، وإذا احتجت كفيلاً رقمياً نساعدك تطلبه من نفس المكان.</p>
+              </div>
+            </div>
+            <Button size="lg" onClick={() => setWizardOpen(true)} className="shrink-0">
+              طلب تمويل جديد
+            </Button>
+          </CardContent>
+        </Card>
+        {wizardOpen && <LoanApplicationDialog onClose={() => setWizardOpen(false)} />}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Card className="border-primary/20">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-secondary" /> طلب التمويل الأخير
+          </CardTitle>
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${loanApplicationStatusClass(application!.status)}`}>
+            {loanApplicationStatusLabel(application!.status)}
+          </span>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-muted-foreground">المبلغ المطلوب</p>
+              <p className="font-bold">{application!.requested_amount.toLocaleString()} د.أ</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">الغرض</p>
+              <p className="font-bold truncate">{application!.purpose}</p>
+            </div>
+          </div>
+
+          {application!.status === 'submitted' && application!.recommended_amount != null && (
+            <div className="grid grid-cols-2 gap-4 text-sm p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
+              <div>
+                <p className="opacity-80">المبلغ الموصى به</p>
+                <p className="font-bold">{application!.recommended_amount.toLocaleString()} د.أ</p>
+              </div>
+              <div>
+                <p className="opacity-80">القسط الشهري</p>
+                <p className="font-bold">{application!.monthly_installment?.toLocaleString()} د.أ</p>
+              </div>
+            </div>
+          )}
+
+          <p className="text-sm text-muted-foreground leading-relaxed">{application!.recommendation}</p>
+
+          {application!.status === 'awaiting_guarantor' && (
+            <InlineGuarantorRequest application={application!} guarantorNetwork={guarantorNetwork} />
+          )}
+
+          {application!.status === 'rejected' && (
+            <Button variant="outline" onClick={() => setWizardOpen(true)}>تقديم طلب جديد</Button>
+          )}
+        </CardContent>
+      </Card>
+      {wizardOpen && <LoanApplicationDialog onClose={() => setWizardOpen(false)} />}
+    </>
+  );
+}
+
+function InlineGuarantorRequest({ application, guarantorNetwork }: { application: LoanApplication; guarantorNetwork?: GuarantorNetwork }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const requestMutation = useRequestGuarantor();
+  const [nationalId, setNationalId] = useState("");
+
+  const linkedRelationship = application.guarantor_relationship_id
+    ? guarantorNetwork?.outgoing.find((r) => r.id === application.guarantor_relationship_id)
+    : undefined;
+
+  if (linkedRelationship) {
+    return (
+      <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+        <p className="text-blue-800">
+          طلب كفالة من <strong>{linkedRelationship.guarantor_name}</strong> — {guarantorStatusLabel(linkedRelationship.status)}
+        </p>
+        <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${guarantorStatusClass(linkedRelationship.status)}`}>
+          {guarantorStatusLabel(linkedRelationship.status)}
+        </span>
+      </div>
+    );
+  }
+
+  const handleRequest = async () => {
+    if (!nationalId.trim()) return;
+    try {
+      const res = await requestMutation.mutateAsync({ data: { guarantor_national_id: nationalId.trim(), application_id: application.id } });
+      toast({ title: "تم إرسال الطلب", description: `تم إرسال طلب الكفالة إلى ${res.guarantor_name}.` });
+      setNationalId("");
+      queryClient.invalidateQueries({ queryKey: getGetGuarantorNetworkQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetCurrentLoanApplicationQueryKey() });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "تعذر إرسال الطلب",
+        description: error?.error || "لم نتمكن من العثور على هذا الشخص أو أنه غير مؤهل ليكون كفيلاً رقمياً.",
+      });
+    }
+  };
+
+  return (
+    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
+      <p className="text-sm text-yellow-800">
+        طلبك يحتاج كفيلاً رقمياً لإتمام الموافقة. أدخل الرقم الوطني لشخص موثّق عندنا ليكون كفيلك.
+      </p>
+      <div className="flex gap-2">
+        <Input
+          dir="ltr"
+          placeholder="الرقم الوطني للكفيل"
+          value={nationalId}
+          onChange={(e) => setNationalId(e.target.value)}
+        />
+        <Button onClick={handleRequest} disabled={requestMutation.isPending || !nationalId.trim()}>
+          {requestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "طلب كفيل"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LoanApplicationDialog({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const submitMutation = useSubmitLoanApplication();
+  const [requestedAmount, setRequestedAmount] = useState("");
+  const [purpose, setPurpose] = useState("");
+
+  const handleSubmit = () => {
+    const amount = parseFloat(requestedAmount);
+    if (!amount || amount <= 0 || !purpose.trim()) return;
+    submitMutation.mutate(
+      { data: { requested_amount: amount, purpose: purpose.trim() } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetCurrentLoanApplicationQueryKey() });
+        },
+      },
+    );
+  };
+
+  const result = submitMutation.data;
+
+  return (
+    <DialogWrapper title="طلب تمويل جديد" isOpen={true} onClose={onClose}>
+      {!result && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="amount">المبلغ المطلوب (د.أ)</Label>
+            <Input
+              id="amount"
+              type="number"
+              min="1"
+              dir="ltr"
+              value={requestedAmount}
+              onChange={(e) => setRequestedAmount(e.target.value)}
+              placeholder="مثال: 1000"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="purpose">الغرض من التمويل</Label>
+            <Textarea
+              id="purpose"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              placeholder="مثال: تجديد المنزل، شراء سيارة، توسيع مشروعي الخاص..."
+              rows={3}
+            />
+          </div>
+          {submitMutation.isError && (
+            <p className="text-destructive text-sm">حدث خطأ أثناء إرسال الطلب، الرجاء المحاولة مرة أخرى.</p>
+          )}
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={handleSubmit}
+            disabled={submitMutation.isPending || !requestedAmount || !purpose.trim()}
+          >
+            {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "إرسال الطلب"}
+          </Button>
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-4">
+          <div className={`p-6 rounded-xl border text-center ${result.status === 'submitted' ? 'bg-green-50 border-green-200 text-green-800' : result.status === 'awaiting_guarantor' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-destructive/5 border-destructive/20 text-destructive'}`}>
+            <h3 className="text-xl font-bold mb-2">{loanApplicationStatusLabel(result.status)}</h3>
+            <p className="opacity-90 text-sm leading-relaxed">{result.recommendation}</p>
+          </div>
+
+          {result.status === 'submitted' && result.recommended_amount != null && (
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="p-4 bg-muted/30 rounded-lg text-center border">
+                <p className="text-muted-foreground">المبلغ الموصى به</p>
+                <p className="text-xl font-bold text-primary">{result.recommended_amount.toLocaleString()} د.أ</p>
+              </div>
+              <div className="p-4 bg-muted/30 rounded-lg text-center border">
+                <p className="text-muted-foreground">القسط الشهري</p>
+                <p className="text-xl font-bold text-secondary">{result.monthly_installment?.toLocaleString()} د.أ</p>
+              </div>
+            </div>
+          )}
+
+          {result.status === 'awaiting_guarantor' && (
+            <p className="text-sm text-muted-foreground text-center">
+              أغلق هذه النافذة وستجد في بطاقة "طلب التمويل الأخير" خياراً لطلب كفيل رقمي يدعم طلبك.
+            </p>
+          )}
+
+          <Button className="w-full" variant="outline" onClick={onClose}>إغلاق</Button>
+        </div>
+      )}
+    </DialogWrapper>
   );
 }
 

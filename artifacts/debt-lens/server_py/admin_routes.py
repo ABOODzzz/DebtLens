@@ -1359,6 +1359,20 @@ def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_cu
             related_id=body.relationship_id,
         )
 
+    # If this guarantor relationship was requested to satisfy a loan
+    # application (see api_routes.py's /loan-application), move that
+    # application forward: approved -> submitted for final admin review,
+    # rejected -> back to awaiting_guarantor so the applicant can try someone
+    # else instead of being stuck.
+    if rel.get("applicationId") is not None:
+        import loan_application_store
+
+        try:
+            application_status = "submitted" if body.decision == "approved" else "awaiting_guarantor"
+            loan_application_store.update_status_by_relationship(body.relationship_id, application_status)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to update loan application linked to relationship %s", body.relationship_id)
+
     return {
         "relationship_id": body.relationship_id,
         "requester_uid": requester_uid,

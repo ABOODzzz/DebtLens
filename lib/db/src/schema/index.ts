@@ -19,3 +19,4 @@
 
 export * from "./headlines";
 export * from "./consolidationRequests";
+export * from "./loanApplications";

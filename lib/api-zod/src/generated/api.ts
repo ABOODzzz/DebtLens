@@ -155,11 +155,98 @@ export const AssessLoanEligibilityResponse = zod.object({
 
 
 /**
+ * Runs the AI eligibility assessment and persists an application record; when the applicant's DTI only qualifies with a digital guarantor, the application is created with status awaiting_guarantor instead of being rejected outright.
+ * @summary Submit a new financing application
+ */
+export const SubmitLoanApplicationBody = zod.object({
+  "requested_amount": zod.number(),
+  "purpose": zod.string()
+})
+
+export const SubmitLoanApplicationResponse = zod.object({
+  "id": zod.number().int(),
+  "uid": zod.string(),
+  "requested_amount": zod.number(),
+  "purpose": zod.string(),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'rejected']),
+  "requires_guarantor": zod.boolean(),
+  "guarantor_relationship_id": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "risk_tier": zod.string().nullish(),
+  "credit_score": zod.number().int().nullish(),
+  "recommended_amount": zod.number().nullish(),
+  "interest_rate": zod.number().nullish(),
+  "term_months": zod.number().int().nullish(),
+  "monthly_installment": zod.number().nullish(),
+  "total_repayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get the applicant's most recent loan application
+ */
+export const GetCurrentLoanApplicationResponse = zod.object({
+  "id": zod.number().int(),
+  "uid": zod.string(),
+  "requested_amount": zod.number(),
+  "purpose": zod.string(),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'rejected']),
+  "requires_guarantor": zod.boolean(),
+  "guarantor_relationship_id": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "risk_tier": zod.string().nullish(),
+  "credit_score": zod.number().int().nullish(),
+  "recommended_amount": zod.number().nullish(),
+  "interest_rate": zod.number().nullish(),
+  "term_months": zod.number().int().nullish(),
+  "monthly_installment": zod.number().nullish(),
+  "total_repayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Link a just-requested digital guarantor relationship to an awaiting_guarantor application
+ */
+export const AttachGuarantorToApplicationBody = zod.object({
+  "application_id": zod.number().int(),
+  "relationship_id": zod.string()
+})
+
+export const AttachGuarantorToApplicationResponse = zod.object({
+  "id": zod.number().int(),
+  "uid": zod.string(),
+  "requested_amount": zod.number(),
+  "purpose": zod.string(),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'rejected']),
+  "requires_guarantor": zod.boolean(),
+  "guarantor_relationship_id": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "risk_tier": zod.string().nullish(),
+  "credit_score": zod.number().int().nullish(),
+  "recommended_amount": zod.number().nullish(),
+  "interest_rate": zod.number().nullish(),
+  "term_months": zod.number().int().nullish(),
+  "monthly_installment": zod.number().nullish(),
+  "total_repayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
  * Looks the person up by national ID, checks they're verified and in good financial standing, then creates a pending request.
  * @summary Request another verified customer to act as a digital guarantor
  */
 export const RequestGuarantorBody = zod.object({
-  "guarantor_national_id": zod.string()
+  "guarantor_national_id": zod.string(),
+  "application_id": zod.number().int().nullish().describe('When set, links the resulting relationship to this loan application so its status card reflects the request.')
 })
 
 export const RequestGuarantorResponse = zod.object({

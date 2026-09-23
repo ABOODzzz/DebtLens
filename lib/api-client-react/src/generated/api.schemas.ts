@@ -178,6 +178,54 @@ export interface LoanEligibilityResult {
   currentDebtToIncomePercentage: number;
 }
 
+export type LoanApplicationStatus = typeof LoanApplicationStatus[keyof typeof LoanApplicationStatus];
+
+
+export const LoanApplicationStatus = {
+  awaiting_guarantor: 'awaiting_guarantor',
+  submitted: 'submitted',
+  rejected: 'rejected',
+} as const;
+
+export interface LoanApplication {
+  id: number;
+  uid: string;
+  requested_amount: number;
+  purpose: string;
+  status: LoanApplicationStatus;
+  requires_guarantor: boolean;
+  /** @nullable */
+  guarantor_relationship_id?: string | null;
+  eligible: boolean;
+  /** @nullable */
+  risk_tier?: string | null;
+  /** @nullable */
+  credit_score?: number | null;
+  /** @nullable */
+  recommended_amount?: number | null;
+  /** @nullable */
+  interest_rate?: number | null;
+  /** @nullable */
+  term_months?: number | null;
+  /** @nullable */
+  monthly_installment?: number | null;
+  /** @nullable */
+  total_repayment?: number | null;
+  recommendation: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoanApplicationInput {
+  requested_amount: number;
+  purpose: string;
+}
+
+export interface AttachGuarantorInput {
+  application_id: number;
+  relationship_id: string;
+}
+
 export type GuarantorRelationshipSummaryStatus = typeof GuarantorRelationshipSummaryStatus[keyof typeof GuarantorRelationshipSummaryStatus];
 
 
@@ -221,6 +269,11 @@ export interface GuarantorNetwork {
 
 export interface GuarantorRequestInput {
   guarantor_national_id: string;
+  /**
+     * When set, links the resulting relationship to this loan application so its status card reflects the request.
+     * @nullable
+     */
+  application_id?: number | null;
 }
 
 export type GuarantorRequestResultStatus = typeof GuarantorRequestResultStatus[keyof typeof GuarantorRequestResultStatus];

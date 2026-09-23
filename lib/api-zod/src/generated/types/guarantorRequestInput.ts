@@ -8,4 +8,9 @@
 
 export interface GuarantorRequestInput {
   guarantor_national_id: string;
+  /**
+     * When set, links the resulting relationship to this loan application so its status card reflects the request.
+     * @nullable
+     */
+  application_id?: number | null;
 }

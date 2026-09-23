@@ -273,6 +273,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /loan-application:
+    post:
+      operationId: submitLoanApplication
+      tags: [finance]
+      summary: Submit a new financing application
+      description: Runs the AI eligibility assessment and persists an application record; when the applicant's DTI only qualifies with a digital guarantor, the application is created with status awaiting_guarantor instead of being rejected outright.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanApplicationInput"
+      responses:
+        "200":
+          description: Application created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanApplication"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI or database service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: getCurrentLoanApplication
+      tags: [finance]
+      summary: Get the applicant's most recent loan application
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Most recent application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanApplication"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No application submitted yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /loan-application/attach-guarantor:
+    post:
+      operationId: attachGuarantorToApplication
+      tags: [finance]
+      summary: Link a just-requested digital guarantor relationship to an awaiting_guarantor application
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachGuarantorInput"
+      responses:
+        "200":
+          description: Application updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanApplication"
+        "400":
+          description: Application isn't awaiting a guarantor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Application not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /guarantor/request:
     post:
       operationId: requestGuarantor
@@ -976,6 +1078,79 @@ components:
           type: boolean
         currentDebtToIncomePercentage:
           type: number
+    LoanApplication:
+      type: object
+      required:
+        - id
+        - uid
+        - requested_amount
+        - purpose
+        - status
+        - requires_guarantor
+        - eligible
+        - recommendation
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        requested_amount:
+          type: number
+        purpose:
+          type: string
+        status:
+          type: string
+          enum: [awaiting_guarantor, submitted, rejected]
+        requires_guarantor:
+          type: boolean
+        guarantor_relationship_id:
+          type: ["string", "null"]
+        eligible:
+          type: boolean
+        risk_tier:
+          type: ["string", "null"]
+        credit_score:
+          type: ["integer", "null"]
+        recommended_amount:
+          type: ["number", "null"]
+        interest_rate:
+          type: ["number", "null"]
+        term_months:
+          type: ["integer", "null"]
+        monthly_installment:
+          type: ["number", "null"]
+        total_repayment:
+          type: ["number", "null"]
+        recommendation:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    LoanApplicationInput:
+      type: object
+      required:
+        - requested_amount
+        - purpose
+      properties:
+        requested_amount:
+          type: number
+        purpose:
+          type: string
+    AttachGuarantorInput:
+      type: object
+      required:
+        - application_id
+        - relationship_id
+      properties:
+        application_id:
+          type: integer
+        relationship_id:
+          type: string
     GuarantorRelationshipSummary:
       type: object
       required:
@@ -1053,6 +1228,9 @@ components:
       properties:
         guarantor_national_id:
           type: string
+        application_id:
+          type: ["integer", "null"]
+          description: When set, links the resulting relationship to this loan application so its status card reflects the request.
     GuarantorRequestResult:
       type: object
       required:

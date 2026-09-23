@@ -168,6 +168,7 @@ def _iso(value) -> str | None:
 
 class GuarantorRequestBody(BaseModel):
     guarantor_national_id: str
+    application_id: int | None = None
 
 
 @router.post("/request")
@@ -257,12 +258,27 @@ def request_guarantor(body: GuarantorRequestBody, user: dict = Depends(get_curre
             "guarantorNationalId": guarantor_doc.get("nationalId"),
             "status": "pending",
             "maxAmount": GUARANTOR_BACKED_MAX_AMOUNT,
+            "applicationId": body.application_id,
             "requestedAt": now,
             "respondedAt": None,
             "adminDecisionAt": None,
             "adminDecisionReason": None,
         }
     )
+
+    # If this request was made to satisfy a specific loan application (the
+    # "apply for financing" journey in api_routes.py), link the two so the
+    # applicant's application status card reflects this pending request
+    # instead of showing a dead end.
+    if body.application_id is not None:
+        import loan_application_store
+
+        try:
+            application = loan_application_store.get_loan_application(body.application_id)
+            if application and application["uid"] == requester_uid and application["status"] == "awaiting_guarantor":
+                loan_application_store.attach_guarantor_relationship(body.application_id, relationship_ref.id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to link guarantor relationship %s to loan application %s", relationship_ref.id, body.application_id)
 
     notify(
         db,

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 import consolidation_store
 import finance
+import loan_application_store
 import market_data
 from anthropic_client import ANTHROPIC_MODEL, anthropic_client
 from firebase_client import FirebaseUnavailableError, get_current_user
@@ -804,13 +805,18 @@ def _enforce_dti_ceiling(verdict: dict, assessment_data: dict, dti_ceiling_perce
     return verdict
 
 
-@router.post("/ai-loan-assessment")
-def ai_loan_assessment(user: dict = Depends(get_current_user)):
-    profile = _load_profile(user["uid"])
+def _run_loan_assessment(uid: str) -> tuple[dict, dict, dict | None]:
+    """
+    Shared by /ai-loan-assessment (a read-only preview) and /loan-application
+    (an actual submission): load the profile, run the Claude assessment, and
+    enforce the hard DTI ceiling. Returns (verdict, assessment_data,
+    guarantor_context).
+    """
+    profile = _load_profile(uid)
     _require_anthropic()
 
     assessment_data = _loan_assessment_data(profile)
-    guarantor_context = _guarantor_context(user["uid"])
+    guarantor_context = _guarantor_context(uid)
 
     try:
         verdict = _generate_loan_assessment_via_claude(
@@ -832,6 +838,13 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
 
     if verdict["credit_score"] is None:
         verdict["credit_score"] = _fallback_credit_score(assessment_data, verdict["eligible"])
+
+    return verdict, assessment_data, guarantor_context
+
+
+@router.post("/ai-loan-assessment")
+def ai_loan_assessment(user: dict = Depends(get_current_user)):
+    verdict, assessment_data, guarantor_context = _run_loan_assessment(user["uid"])
     credit_score_label, credit_score_color = _credit_score_band(verdict["credit_score"])
 
     return {
@@ -850,6 +863,106 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
         "basedOnRealData": assessment_data["is_real_data"],
         "currentDebtToIncomePercentage": assessment_data["debt_to_income_percentage"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Loan application: the connected journey from "I want financing" through
+# the AI eligibility check to (when needed) a digital guarantor request.
+# ---------------------------------------------------------------------------
+class LoanApplicationBody(BaseModel):
+    requested_amount: float
+    purpose: str
+
+
+def _decide_requires_guarantor(debt_to_income_percentage: float, already_guarantor_backed: bool) -> bool:
+    """
+    Deterministic, independent of the Claude call: a fresh applicant whose
+    current DTI sits between the base ceiling and the guarantor-relaxed
+    ceiling can only qualify with a digital guarantor backing them, so the
+    application should ask for one instead of outright rejecting. Someone
+    already backed by an approved guarantor never needs a new one; someone
+    over the guarantor ceiling can't be saved by adding one either.
+    """
+    if already_guarantor_backed:
+        return False
+    if debt_to_income_percentage <= _LOAN_ASSESSMENT_DTI_CEILING_PERCENT:
+        return False
+    return debt_to_income_percentage <= _GUARANTOR_DTI_CEILING_PERCENT
+
+
+@router.post("/loan-application")
+def submit_loan_application(body: LoanApplicationBody, user: dict = Depends(get_current_user)):
+    if body.requested_amount <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Requested amount must be positive.")
+    if not body.purpose.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Purpose is required.")
+
+    verdict, assessment_data, guarantor_context = _run_loan_assessment(user["uid"])
+
+    # Deterministic and independent of what Claude decided: someone whose
+    # current DTI sits strictly between the two ceilings would pass under
+    # the guarantor-relaxed ceiling, so ask them for a guarantor instead of
+    # rejecting outright.
+    requires_guarantor = _decide_requires_guarantor(
+        assessment_data["debt_to_income_percentage"], guarantor_context is not None
+    )
+
+    if requires_guarantor:
+        status_value = "awaiting_guarantor"
+    elif verdict["eligible"]:
+        status_value = "submitted"
+    else:
+        status_value = "rejected"
+
+    snapshot = {
+        "status": status_value,
+        "requires_guarantor": requires_guarantor,
+        "eligible": verdict["eligible"],
+        "risk_tier": verdict["risk_tier"],
+        "credit_score": verdict["credit_score"],
+        "recommended_amount": verdict["recommended_amount"],
+        "interest_rate": verdict["interest_rate"],
+        "term_months": verdict["term_months"],
+        "monthly_installment": verdict["monthly_installment"],
+        "total_repayment": verdict["total_repayment"],
+        "recommendation": verdict["recommendation"],
+    }
+
+    application = loan_application_store.insert_loan_application(
+        uid=user["uid"],
+        requested_amount=body.requested_amount,
+        purpose=body.purpose.strip(),
+        snapshot=snapshot,
+    )
+    return application
+
+
+@router.get("/loan-application")
+def get_current_loan_application(user: dict = Depends(get_current_user)):
+    application = loan_application_store.get_latest_loan_application(user["uid"])
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No loan application submitted yet.")
+    return application
+
+
+class AttachGuarantorBody(BaseModel):
+    application_id: int
+    relationship_id: str
+
+
+@router.post("/loan-application/attach-guarantor")
+def attach_guarantor_to_application(body: AttachGuarantorBody, user: dict = Depends(get_current_user)):
+    application = loan_application_store.get_loan_application(body.application_id)
+    if application is None or application["uid"] != user["uid"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan application not found.")
+    if application["status"] != "awaiting_guarantor":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This application isn't awaiting a guarantor.",
+        )
+
+    updated = loan_application_store.attach_guarantor_relationship(body.application_id, body.relationship_id)
+    return updated
 
 
 @router.get("/financial-summary")
