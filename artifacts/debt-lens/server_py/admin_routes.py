@@ -23,7 +23,7 @@ import base64
 import json
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import requests
@@ -48,6 +48,10 @@ _MAX_FILE_BYTES = 32 * 1024 * 1024  # 32 MB
 # Statements can run long (many pages, many transactions), so this gets a
 # generous output budget -- same as the other AI-vision endpoint (KYC).
 _STATEMENT_MAX_TOKENS = 16000
+# How recent a final approved/admin_rejected decision must be for an admin to
+# still be able to revise it -- old enough to fix a misclick or a call made on
+# stale information, not so open-ended that settled cases can be relitigated.
+_LOAN_DECISION_REVISE_WINDOW = timedelta(days=14)
 _JSON_FIX_MAX_TOKENS = 16000
 
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -1566,5 +1570,93 @@ def loan_application_decision(body: LoanApplicationDecisionBody, admin: dict = D
                     message=guarantor_message,
                     related_id=str(body.application_id),
                 )
+
+    return updated
+
+class LoanApplicationReviseBody(BaseModel):
+    application_id: int
+    new_status: Literal["submitted", "approved", "rejected"]
+    reason: str
+
+@router.post("/loan-application-revise")
+def loan_application_revise(body: LoanApplicationReviseBody, admin: dict = Depends(get_current_admin)):
+    from notifications import notify
+
+    import loan_application_store
+
+    if not body.reason.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A reason is required when revising a final decision.",
+        )
+
+    application = loan_application_store.get_loan_application(body.application_id)
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan application not found.")
+    if application["status"] not in ("approved", "admin_rejected"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This loan application hasn't received a final decision yet, so there's nothing to revise.",
+        )
+
+    decided_at = datetime.fromisoformat(application["updated_at"])
+    if datetime.now(timezone.utc) - decided_at > _LOAN_DECISION_REVISE_WINDOW:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"This decision was made more than {_LOAN_DECISION_REVISE_WINDOW.days} days ago and "
+                "can no longer be revised here."
+            ),
+        )
+
+    target_status = "admin_rejected" if body.new_status == "rejected" else body.new_status
+    updated = loan_application_store.revise_admin_decision(body.application_id, target_status, body.reason)
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This loan application's decision changed and can no longer be revised.",
+        )
+
+    db = _get_db()
+    if target_status == "approved":
+        title, message = "تم تعديل قرار طلب التمويل", (
+            f"راجعت الإدارة قرارها السابق، وتمت الموافقة على طلب تمويلك بمبلغ "
+            f"{updated['recommended_amount'] or updated['requested_amount']} دينار. السبب: {body.reason}"
+        )
+    elif target_status == "admin_rejected":
+        title, message = "تم تعديل قرار طلب التمويل", f"راجعت الإدارة قرارها السابق ورُفض طلب تمويلك. السبب: {body.reason}"
+    else:
+        title, message = "تم تعديل قرار طلب التمويل", (
+            f"راجعت الإدارة قرارها السابق على طلب تمويلك، وهو الآن قيد المراجعة النهائية من جديد. السبب: {body.reason}"
+        )
+
+    notify(
+        db,
+        uid=application["uid"],
+        notif_type="loan_application_revised",
+        title=title,
+        message=message,
+        related_id=str(body.application_id),
+    )
+
+    if application.get("guarantor_relationship_id"):
+        try:
+            rel = _get_relationship(db, application["guarantor_relationship_id"])
+            guarantor_uid = rel.get("guarantorUid")
+            if guarantor_uid:
+                notify(
+                    db,
+                    uid=guarantor_uid,
+                    notif_type="loan_application_revised",
+                    title="تم تعديل قرار طلب التمويل الذي كفلته",
+                    message=f"راجعت الإدارة قرارها السابق على طلب التمويل الذي كفلته. {message}",
+                    related_id=str(body.application_id),
+                )
+        except HTTPException:
+            logger.warning(
+                "Guarantor relationship %s for application %s not found while notifying of a revision.",
+                application["guarantor_relationship_id"],
+                body.application_id,
+            )
 
     return updated

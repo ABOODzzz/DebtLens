@@ -11,15 +11,18 @@ import {
   useListLoanApplications,
   getListLoanApplicationsQueryKey,
   useSubmitLoanApplicationDecision,
+  useReviseLoanApplicationDecision,
 } from "@workspace/api-client-react";
+import type { LoanApplicationReviseInputNewStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet } from "lucide-react";
+import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminPage() {
@@ -542,9 +545,13 @@ function LoanApplicationsTab() {
   const queryClient = useQueryClient();
   const applicationsQuery = useListLoanApplications();
   const decisionMutation = useSubmitLoanApplicationDecision();
+  const reviseMutation = useReviseLoanApplicationDecision();
   const [activeApplicationId, setActiveApplicationId] = useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [reviseTarget, setReviseTarget] = useState<number | null>(null);
+  const [reviseNewStatus, setReviseNewStatus] = useState<LoanApplicationReviseInputNewStatus>("submitted");
+  const [reviseReason, setReviseReason] = useState("");
   const { toast } = useToast();
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListLoanApplicationsQueryKey() });
@@ -573,6 +580,37 @@ function LoanApplicationsTab() {
       setRejectReason("");
     } catch (error) {
       toast({ variant: "destructive", title: "تعذر حفظ القرار", description: "يرجى المحاولة مرة أخرى." });
+    } finally {
+      setActiveApplicationId(null);
+    }
+  };
+
+  const openRevise = (applicationId: number, currentStatus: string) => {
+    setReviseTarget(applicationId);
+    setReviseNewStatus(currentStatus === "approved" ? "rejected" : "approved");
+    setReviseReason("");
+  };
+
+  const handleRevise = async () => {
+    if (reviseTarget == null) return;
+    if (!reviseReason.trim()) {
+      toast({ variant: "destructive", title: "السبب مطلوب", description: "يرجى توضيح سبب تعديل القرار." });
+      return;
+    }
+    setActiveApplicationId(reviseTarget);
+    try {
+      await reviseMutation.mutateAsync({
+        data: { application_id: reviseTarget, new_status: reviseNewStatus, reason: reviseReason.trim() },
+      });
+      invalidate();
+      setReviseTarget(null);
+      setReviseReason("");
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "تعذر تعديل القرار",
+        description: "قد تكون فترة التعديل المسموح بها قد انتهت، أو تغيّرت حالة الطلب. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
+      });
     } finally {
       setActiveApplicationId(null);
     }
@@ -673,6 +711,20 @@ function LoanApplicationsTab() {
                     </Button>
                   </div>
                 )}
+
+                {(app.status === 'approved' || app.status === 'admin_rejected') && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => openRevise(app.id, app.status)}
+                    >
+                      {busy && reviseMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <RotateCcw className="w-4 h-4 ml-1" />}
+                      تعديل القرار
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -698,6 +750,48 @@ function LoanApplicationsTab() {
             <Button variant="outline" onClick={() => setRejectTarget(null)}>إلغاء</Button>
             <Button variant="destructive" disabled={decisionMutation.isPending} onClick={handleReject}>
               {decisionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "تأكيد الرفض"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reviseTarget != null} onOpenChange={(open) => !open && setReviseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تعديل القرار النهائي</DialogTitle>
+            <DialogDescription>
+              يُستخدم هذا لتصحيح قرار حديث اتُّخذ بالخطأ أو بناءً على معلومات غير محدّثة. سيتم إشعار العميل
+              (والكفيل إن وُجد) بالتعديل، ولا يمكن تعديل قرار مرّت عليه أكثر من ١٤ يومًا.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium mb-1">الحالة الجديدة</p>
+              <Select value={reviseNewStatus} onValueChange={(value) => setReviseNewStatus(value as LoanApplicationReviseInputNewStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="approved">الموافقة</SelectItem>
+                  <SelectItem value="rejected">الرفض</SelectItem>
+                  <SelectItem value="submitted">إعادة الطلب لبانتظار القرار النهائي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <p className="text-sm font-medium mb-1">سبب التعديل</p>
+              <Textarea
+                placeholder="مثال: تمت الموافقة بالخطأ على طلب آخر، هذا القرار يصحّحه."
+                value={reviseReason}
+                onChange={(e) => setReviseReason(e.target.value)}
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviseTarget(null)}>إلغاء</Button>
+            <Button disabled={reviseMutation.isPending} onClick={handleRevise}>
+              {reviseMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "تأكيد التعديل"}
             </Button>
           </DialogFooter>
         </DialogContent>

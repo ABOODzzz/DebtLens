@@ -42,7 +42,7 @@ from main import app  # noqa: E402
 CUSTOMER_UID = "loan-application-admin-test-customer"
 
 
-def _application_row(app_id: int, status_value: str = "submitted") -> dict:
+def _application_row(app_id: int, status_value: str = "submitted", updated_at: str | None = None, guarantor_relationship_id: str | None = None) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     return {
         "id": app_id,
@@ -51,7 +51,7 @@ def _application_row(app_id: int, status_value: str = "submitted") -> dict:
         "purpose": "تجديد المنزل",
         "status": status_value,
         "requires_guarantor": False,
-        "guarantor_relationship_id": None,
+        "guarantor_relationship_id": guarantor_relationship_id,
         "admin_decision_reason": None,
         "eligible": True,
         "risk_tier": "منخفض",
@@ -63,7 +63,7 @@ def _application_row(app_id: int, status_value: str = "submitted") -> dict:
         "total_repayment": 525.0,
         "recommendation": "وضعك المالي مستقر.",
         "created_at": now,
-        "updated_at": now,
+        "updated_at": updated_at or now,
     }
 
 
@@ -85,22 +85,32 @@ class FakeAdminLoanApplicationStore:
         self._rows[application_id] = row
         return row
 
+    def revise_admin_decision(self, application_id, new_status, reason):
+        row = self._rows.get(application_id)
+        if row is None or row["status"] not in ("approved", "admin_rejected"):
+            return None
+        row = {**row, "status": new_status, "admin_decision_reason": reason}
+        self._rows[application_id] = row
+        return row
+
 
 class FakeFirestoreDoc:
-    def __init__(self, exists: bool, data: dict | None = None):
+    def __init__(self, exists: bool, data: dict | None = None, doc_id: str | None = None):
         self.exists = exists
         self._data = data or {}
+        self.id = doc_id
 
     def to_dict(self):
         return self._data
 
 
 class FakeDocRef:
-    def __init__(self, data: dict | None):
+    def __init__(self, data: dict | None, doc_id: str | None = None):
         self._data = data
+        self._doc_id = doc_id
 
     def get(self):
-        return FakeFirestoreDoc(self._data is not None, self._data)
+        return FakeFirestoreDoc(self._data is not None, self._data, self._doc_id)
 
 
 GUARANTOR_UID = "loan-application-admin-test-guarantor"
@@ -119,10 +129,17 @@ class FakeCollection:
             return FakeDocRef(self._relationships[doc_id])
         return FakeDocRef(None)
 
-
 class FakeDb:
     def __init__(self, relationships: dict[str, dict] | None = None):
-        self._relationships = relationships or {}
+        # Callers that don't care about relationship wiring (e.g. the revise
+        # tests) can construct FakeDb() with no args and still exercise the
+        # guarantor-notification path via the fixed RELATIONSHIP_ID/GUARANTOR_UID
+        # pair below. Callers that need to control validity (approved vs.
+        # pending, wrong requester, etc.) pass an explicit dict, including `{}`
+        # to simulate no matching relationship.
+        self._relationships = (
+            {RELATIONSHIP_ID: {"guarantorUid": GUARANTOR_UID}} if relationships is None else relationships
+        )
 
     def collection(self, name):
         return FakeCollection(name, self._relationships)
@@ -174,6 +191,7 @@ class TestAdminLoanApplicationEndpoints:
         monkeypatch.setattr(loan_application_store, "list_applications_by_status", self.fake_store.list_applications_by_status)
         monkeypatch.setattr(loan_application_store, "get_loan_application", self.fake_store.get_loan_application)
         monkeypatch.setattr(loan_application_store, "update_admin_decision", self.fake_store.update_admin_decision)
+        monkeypatch.setattr(loan_application_store, "revise_admin_decision", self.fake_store.revise_admin_decision)
         monkeypatch.setattr(admin_routes, "_get_db", lambda: FakeDb(relationships))
         monkeypatch.setattr(notifications, "notify", lambda *args, **kwargs: None)
         app.dependency_overrides[get_current_user] = lambda: {"uid": ADMIN_UID}
@@ -321,4 +339,124 @@ class TestAdminLoanApplicationEndpoints:
         client = TestClient(app)
 
         response = client.get("/api/admin/loan-applications")
+        assert response.status_code == 403
+
+
+class TestAdminLoanApplicationRevise:
+    """
+    Covers /admin/loan-application-revise -- letting an admin walk back a
+    recent approved/admin_rejected decision (a misclick, or one made on
+    stale information) instead of being stuck with it forever.
+    """
+
+    def setup_method(self, method):
+        self.rows = {1: _application_row(1, "approved")}
+        self.fake_store = FakeAdminLoanApplicationStore(self.rows)
+        self.notified: list[dict] = []
+
+    def teardown_method(self, method):
+        app.dependency_overrides.pop(get_current_user, None)
+
+    def _client(self, monkeypatch):
+        monkeypatch.setattr(loan_application_store, "get_loan_application", self.fake_store.get_loan_application)
+        monkeypatch.setattr(loan_application_store, "revise_admin_decision", self.fake_store.revise_admin_decision)
+        monkeypatch.setattr(admin_routes, "_get_db", lambda: FakeDb())
+
+        def fake_notify(db, *, uid, notif_type, title, message, related_id=None):
+            self.notified.append({"uid": uid, "notif_type": notif_type})
+
+        monkeypatch.setattr(notifications, "notify", fake_notify)
+        app.dependency_overrides[get_current_user] = lambda: {"uid": ADMIN_UID}
+        return TestClient(app)
+
+    def test_revise_approved_to_rejected_matches_schema_and_notifies_customer(self, monkeypatch, openapi_spec):
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "rejected", "reason": "تمت الموافقة بالخطأ على طلب آخر"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        _validate_against_schema(data, "LoanApplication", openapi_spec)
+        assert data["status"] == "admin_rejected"
+        assert data["admin_decision_reason"] == "تمت الموافقة بالخطأ على طلب آخر"
+        assert self.rows[1]["status"] == "admin_rejected"
+        assert any(n["uid"] == CUSTOMER_UID and n["notif_type"] == "loan_application_revised" for n in self.notified)
+
+    def test_revise_notifies_backing_guarantor_too(self, monkeypatch):
+        self.rows[1] = _application_row(1, "approved", guarantor_relationship_id=RELATIONSHIP_ID)
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "rejected", "reason": "معلومات غير محدّثة"},
+        )
+        assert response.status_code == 200
+        assert any(n["uid"] == GUARANTOR_UID and n["notif_type"] == "loan_application_revised" for n in self.notified)
+
+    def test_revise_back_to_submitted_is_allowed(self, monkeypatch, openapi_spec):
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "submitted", "reason": "بحاجة لمراجعة إضافية"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        _validate_against_schema(data, "LoanApplication", openapi_spec)
+        assert data["status"] == "submitted"
+
+    def test_revise_still_submitted_application_is_rejected(self, monkeypatch):
+        self.rows[1] = _application_row(1, "submitted")
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "approved", "reason": "أي سبب"},
+        )
+        assert response.status_code == 400
+
+    def test_revise_requires_a_non_empty_reason(self, monkeypatch):
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "rejected", "reason": "   "},
+        )
+        assert response.status_code == 400
+
+    def test_revise_outside_window_is_rejected(self, monkeypatch):
+        from datetime import timedelta
+
+        stale_at = (datetime.now(timezone.utc) - timedelta(days=15)).isoformat()
+        self.rows[1] = _application_row(1, "approved", updated_at=stale_at)
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "rejected", "reason": "قديم جداً"},
+        )
+        assert response.status_code == 400
+
+    def test_revise_unknown_application_returns_404(self, monkeypatch):
+        client = self._client(monkeypatch)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 999, "new_status": "rejected", "reason": "أي سبب"},
+        )
+        assert response.status_code == 404
+
+    def test_revise_non_admin_is_forbidden(self, monkeypatch):
+        monkeypatch.setattr(loan_application_store, "get_loan_application", self.fake_store.get_loan_application)
+        app.dependency_overrides[get_current_user] = lambda: {"uid": "not-the-admin"}
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/admin/loan-application-revise",
+            json={"application_id": 1, "new_status": "rejected", "reason": "أي سبب"},
+        )
         assert response.status_code == 403

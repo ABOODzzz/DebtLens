@@ -609,6 +609,21 @@ export interface LoanApplicationDecisionInput {
   reason?: string | null;
 }
 
+export type LoanApplicationReviseInputNewStatus = typeof LoanApplicationReviseInputNewStatus[keyof typeof LoanApplicationReviseInputNewStatus];
+
+
+export const LoanApplicationReviseInputNewStatus = {
+  submitted: 'submitted',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface LoanApplicationReviseInput {
+  application_id: number;
+  new_status: LoanApplicationReviseInputNewStatus;
+  reason: string;
+}
+
 export type KycDecisionInputDecision = typeof KycDecisionInputDecision[keyof typeof KycDecisionInputDecision];
 
 

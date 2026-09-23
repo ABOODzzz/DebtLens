@@ -66,6 +66,8 @@ export * from './loanApplication';
 export * from './loanApplicationDecisionInput';
 export * from './loanApplicationDecisionInputDecision';
 export * from './loanApplicationInput';
+export * from './loanApplicationReviseInput';
+export * from './loanApplicationReviseInputNewStatus';
 export * from './loanApplicationStatus';
 export * from './loanEligibilityResult';
 export * from './markAllNotificationsReadResult';

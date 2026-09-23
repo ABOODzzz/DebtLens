@@ -569,6 +569,38 @@ export const SubmitLoanApplicationDecisionResponse = zod.object({
 
 
 /**
+ * @summary Revise a recently-made final admin decision on a loan application
+ */
+export const ReviseLoanApplicationDecisionBody = zod.object({
+  "application_id": zod.number().int(),
+  "new_status": zod.enum(['submitted', 'approved', 'rejected']),
+  "reason": zod.string()
+})
+
+export const ReviseLoanApplicationDecisionResponse = zod.object({
+  "id": zod.number().int(),
+  "uid": zod.string(),
+  "requested_amount": zod.number(),
+  "purpose": zod.string(),
+  "status": zod.enum(['awaiting_guarantor', 'submitted', 'approved', 'admin_rejected', 'rejected']),
+  "requires_guarantor": zod.boolean(),
+  "guarantor_relationship_id": zod.string().nullish(),
+  "admin_decision_reason": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "risk_tier": zod.string().nullish(),
+  "credit_score": zod.number().int().nullish(),
+  "recommended_amount": zod.number().nullish(),
+  "interest_rate": zod.number().nullish(),
+  "term_months": zod.number().int().nullish(),
+  "monthly_installment": zod.number().nullish(),
+  "total_repayment": zod.number().nullish(),
+  "recommendation": zod.string(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
  * @summary Manually approve or reject a user's KYC review
  */
 export const SubmitKycDecisionBody = zod.object({

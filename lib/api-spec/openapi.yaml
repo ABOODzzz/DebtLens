@@ -848,6 +848,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /admin/loan-application-revise:
+    post:
+      operationId: reviseLoanApplicationDecision
+      tags: [admin]
+      summary: Revise a recently-made final admin decision on a loan application
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanApplicationReviseInput"
+      responses:
+        "200":
+          description: Decision revised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanApplication"
+        "400":
+          description: Application hasn't received a final decision yet, or the revision window has passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Loan application not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/kyc-decision:
     post:
       operationId: submitKycDecision
@@ -1760,6 +1810,20 @@ components:
           enum: [approved, rejected]
         reason:
           type: ["string", "null"]
+    LoanApplicationReviseInput:
+      type: object
+      required:
+        - application_id
+        - new_status
+        - reason
+      properties:
+        application_id:
+          type: integer
+        new_status:
+          type: string
+          enum: [submitted, approved, rejected]
+        reason:
+          type: string
     KycDecisionInput:
       type: object
       required:

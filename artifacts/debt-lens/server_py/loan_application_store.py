@@ -168,6 +168,32 @@ def update_status_by_relationship(relationship_id: str, status: str) -> dict | N
     return _row_to_dict(row) if row else None
 
 
+def revise_admin_decision(application_id: int, new_status: str, reason: str) -> dict | None:
+    """
+    Overwrite an already-decided application's terminal state (`approved` or
+    `admin_rejected`) with a corrected one -- for an admin walking back a
+    misclick or a call made on stale information. Only applies to a row
+    currently sitting in a terminal decision state; returns None if it's
+    still `submitted` (nothing to revise) or has already been revised again
+    concurrently. The revision window (how recent the original decision must
+    be) is enforced by the caller in admin_routes.py before this is called.
+    """
+    with psycopg2.connect(_database_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE loan_applications
+                SET status = %s, admin_decision_reason = %s, updated_at = now()
+                WHERE id = %s AND status IN ('approved', 'admin_rejected')
+                RETURNING *
+                """,
+                (new_status, reason, application_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return _row_to_dict(row) if row else None
+
+
 def update_admin_decision(application_id: int, status_value: str, reason: str | None) -> dict | None:
     """
     Record the admin's final disbursement decision on a `submitted`
