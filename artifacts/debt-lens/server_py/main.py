@@ -91,6 +91,20 @@ async def read_login(request: Request):
     )
 
 
+@app.get("/signup", response_class=HTMLResponse)
+async def read_signup(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "signup.html",
+        {
+            "firebase_enabled": FIREBASE_ENABLED,
+            "admin_uid": ADMIN_UID,
+            "firebase_web_config": FIREBASE_WEB_CONFIG,
+            "firebase_web_configured": FIREBASE_WEB_CONFIGURED,
+        },
+    )
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def read_admin(request: Request):
     return templates.TemplateResponse(

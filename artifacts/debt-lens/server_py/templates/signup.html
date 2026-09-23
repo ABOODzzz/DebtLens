@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}إنشاء حساب - DebtLens{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/auth.css" />
+<script>document.addEventListener("DOMContentLoaded", () => document.body.classList.add("auth-body"));</script>
+{% endblock %}
+{% block content %}
+<div class="auth-shell">
+  <div class="auth-visual">
+    <h2>وضوح مالي يحميك من تكديس الديون</h2>
+    <p class="auth-tagline">
+      DebtLens يمنحك صورة كاملة عن وضعك المالي عبر كل مصادر الاقتراض، بدعم الذكاء الاصطناعي.
+    </p>
+    <div class="auth-stat-row">
+      <div class="auth-stat-card"></div>
+      <div class="auth-stat-card"></div>
+    </div>
+  </div>
+
+  <div class="auth-form-panel">
+    <span class="auth-brand-mark">DebtLens</span>
+    <h1>أنشئ حسابك</h1>
+    <p class="auth-subtitle">ابدأ خطوتك الأولى نحو وضوح مالي كامل خلال دقيقة واحدة.</p>
+
+    {% if not firebase_enabled or not firebase_web_configured %}
+    <p class="badge badge-warn">إنشاء الحساب غير متاح مؤقتًا (لم يتم إعداد Firebase على الخادم)</p>
+    {% else %}
+    <p id="signup-message" class="auth-message badge-warn"></p>
+
+    <form id="signup-form">
+      <label for="email">البريد الإلكتروني</label>
+      <input type="email" id="email" name="email" placeholder="example@email.com" required autocomplete="email" />
+
+      <label for="password">كلمة المرور</label>
+      <input type="password" id="password" name="password" placeholder="••••••••" required autocomplete="new-password" minlength="6" />
+
+      <button type="submit" class="btn" id="signup-submit" style="width:100%;">إنشاء حساب</button>
+    </form>
+
+    <p class="auth-footer-link">لديك حساب بالفعل؟ <a href="/login" class="auth-link">سجّل دخولك</a></p>
+    {% endif %}
+  </div>
+</div>
+
+{% if firebase_enabled and firebase_web_configured %}
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import {
+    getAuth,
+    createUserWithEmailAndPassword,
+  } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+  const firebaseConfig = {{ firebase_web_config | tojson }};
+  const ADMIN_UID = {{ admin_uid | tojson }};
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  const ARABIC_ERRORS = {
+    "auth/invalid-email": "صيغة البريد الإلكتروني غير صحيحة.",
+    "auth/email-already-in-use": "هذا البريد الإلكتروني مسجّل بالفعل.",
+    "auth/weak-password": "كلمة المرور ضعيفة، استخدم 6 أحرف على الأقل.",
+    "auth/network-request-failed": "تعذّر الاتصال بالخادم، تحقق من اتصالك بالإنترنت.",
+  };
+
+  const form = document.getElementById("signup-form");
+  const messageBox = document.getElementById("signup-message");
+  const submitBtn = document.getElementById("signup-submit");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    messageBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جارٍ إنشاء الحساب...";
+
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      const idToken = await credential.user.getIdToken();
+      localStorage.setItem("debtlens_id_token", idToken);
+      localStorage.setItem("debtlens_uid", credential.user.uid);
+      window.location.href = credential.user.uid === ADMIN_UID ? "/admin" : "/";
+    } catch (error) {
+      messageBox.textContent = ARABIC_ERRORS[error.code] || "تعذّر إنشاء الحساب. حاول مرة أخرى.";
+      messageBox.className = "auth-message badge-warn";
+      messageBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "إنشاء حساب";
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}
