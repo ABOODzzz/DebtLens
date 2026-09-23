@@ -567,6 +567,7 @@ export interface GuarantorDecisionInput {
   reason?: string | null;
 }
 
+export type GuarantorReviseInputNewStatus = typeof GuarantorReviseInputNewStatus[keyof typeof GuarantorReviseInputNewStatus];
 export type GuarantorDecisionResultStatus = typeof GuarantorDecisionResultStatus[keyof typeof GuarantorDecisionResultStatus];
 
 
@@ -673,3 +674,14 @@ export interface KycDecisionResult {
   reason: string;
 }
 
+
+export const GuarantorReviseInputNewStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface GuarantorReviseInput {
+  relationship_id: string;
+  new_status: GuarantorReviseInputNewStatus;
+  reason: string;
+}

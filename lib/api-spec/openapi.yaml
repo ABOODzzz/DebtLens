@@ -766,6 +766,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /admin/guarantor-revise:
+    post:
+      operationId: reviseGuarantorDecision
+      tags: [admin]
+      summary: Revise a recently-made final admin decision on a digital guarantor request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuarantorReviseInput"
+      responses:
+        "200":
+          description: Guarantor decision revised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuarantorDecisionResult"
+        "400":
+          description: Guarantor decision hasn't received a final decision yet, or the revision window has passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not the admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Guarantor relationship not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/loan-applications:
     get:
       operationId: listLoanApplications
@@ -1754,6 +1804,20 @@ components:
           enum: [approved, rejected]
         reason:
           type: ["string", "null"]
+    GuarantorReviseInput:
+      type: object
+      required:
+        - relationship_id
+        - new_status
+        - reason
+      properties:
+        relationship_id:
+          type: string
+        new_status:
+          type: string
+          enum: [approved, rejected]
+        reason:
+          type: string
     GuarantorDecisionResult:
       type: object
       required:

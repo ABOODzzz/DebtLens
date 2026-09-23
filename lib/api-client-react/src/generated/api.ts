@@ -40,6 +40,7 @@ import type {
   GuarantorRequestsList,
   GuarantorRespondInput,
   GuarantorRespondResult,
+  GuarantorReviseInput,
   Headline,
   HealthStatus,
   KycDecisionInput,
@@ -1944,6 +1945,94 @@ export const useSubmitGuarantorDecision = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getSubmitGuarantorDecisionMutationOptions(options));
+    }
+
+export const getReviseGuarantorDecisionUrl = () => {
+
+
+
+
+  return `/api/admin/guarantor-revise`
+}
+
+/**
+ * @summary Revise a recently-made final admin decision on a digital guarantor request
+ */
+export const reviseGuarantorDecision = async (guarantorReviseInput: GuarantorReviseInput, options?: Parameters<typeof customFetch>[1]): Promise<GuarantorDecisionResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GuarantorDecisionResult>(getReviseGuarantorDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(guarantorReviseInput)
+  }
+);}
+
+
+
+
+
+export const getReviseGuarantorDecisionMutationKey = () => ['reviseGuarantorDecision'] as const;
+
+export const getReviseGuarantorDecisionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviseGuarantorDecision>>, TError,ReviseGuarantorDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviseGuarantorDecision>>, TError,ReviseGuarantorDecisionMutationVariables, TContext> => {
+
+const mutationKey = getReviseGuarantorDecisionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviseGuarantorDecision>>, ReviseGuarantorDecisionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  reviseGuarantorDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviseGuarantorDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof reviseGuarantorDecision>>>
+    export type ReviseGuarantorDecisionMutationBody = BodyType<GuarantorReviseInput>
+    export type ReviseGuarantorDecisionMutationError = ErrorType<ErrorResponse>
+    export type ReviseGuarantorDecisionMutationVariables = {data: BodyType<GuarantorReviseInput>}
+
+    /**
+ * @summary Revise a recently-made final admin decision on a digital guarantor request
+ */
+export const useReviseGuarantorDecision = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviseGuarantorDecision>>, TError,ReviseGuarantorDecisionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviseGuarantorDecision>>,
+        TError,
+        ReviseGuarantorDecisionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReviseGuarantorDecisionMutationOptions(options));
     }
 
 export const getListLoanApplicationsUrl = () => {

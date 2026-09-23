@@ -52,6 +52,8 @@ export * from './guarantorRequestSummaryStatus';
 export * from './guarantorRespondInput';
 export * from './guarantorRespondResult';
 export * from './guarantorRespondResultStatus';
+export * from './guarantorReviseInput';
+export * from './guarantorReviseInputNewStatus';
 export * from './headline';
 export * from './healthStatus';
 export * from './kycDecisionInput';

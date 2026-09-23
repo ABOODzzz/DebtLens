@@ -8,12 +8,14 @@ import {
   getListGuarantorRequestsQueryKey,
   useGetGuarantorInsight,
   useSubmitGuarantorDecision,
+  useReviseGuarantorDecision,
   useListLoanApplications,
   getListLoanApplicationsQueryKey,
   useSubmitLoanApplicationDecision,
   useReviseLoanApplicationDecision,
 } from "@workspace/api-client-react";
 import type { LoanApplicationReviseInputNewStatus } from "@workspace/api-client-react";
+import type { GuarantorReviseInputNewStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -387,11 +389,18 @@ function GuarantorRequestsTab() {
   const requestsQuery = useListGuarantorRequests();
   const insightMutation = useGetGuarantorInsight();
   const decisionMutation = useSubmitGuarantorDecision();
+  const reviseMutation = useReviseGuarantorDecision();
   const [insightByRelationship, setInsightByRelationship] = useState<Record<string, any>>({});
   const [activeRelationship, setActiveRelationship] = useState<string | null>(null);
+  const [reviseTarget, setReviseTarget] = useState<string | null>(null);
+  const [reviseNewStatus, setReviseNewStatus] = useState<GuarantorReviseInputNewStatus>("rejected");
+  const [reviseReason, setReviseReason] = useState("");
   const { toast } = useToast();
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListGuarantorRequestsQueryKey() });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getListGuarantorRequestsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListLoanApplicationsQueryKey() });
+  };
 
   const handleGetInsight = async (relationshipId: string) => {
     setActiveRelationship(relationshipId);
@@ -412,6 +421,37 @@ function GuarantorRequestsTab() {
       invalidate();
     } catch (error) {
       toast({ variant: "destructive", title: "تعذر حفظ القرار", description: "يرجى المحاولة مرة أخرى." });
+    } finally {
+      setActiveRelationship(null);
+    }
+  };
+
+  const openRevise = (relationshipId: string, currentStatus: string) => {
+    setReviseTarget(relationshipId);
+    setReviseNewStatus(currentStatus === "approved" ? "rejected" : "approved");
+    setReviseReason("");
+  };
+
+  const handleRevise = async () => {
+    if (!reviseTarget) return;
+    if (!reviseReason.trim()) {
+      toast({ variant: "destructive", title: "السبب مطلوب", description: "يرجى توضيح سبب تعديل القرار." });
+      return;
+    }
+    setActiveRelationship(reviseTarget);
+    try {
+      await reviseMutation.mutateAsync({
+        data: { relationship_id: reviseTarget, new_status: reviseNewStatus, reason: reviseReason.trim() },
+      });
+      invalidate();
+      setReviseTarget(null);
+      setReviseReason("");
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "تعذر تعديل قرار الكفالة",
+        description: "قد تكون فترة التعديل المسموح بها قد انتهت، أو تغيّرت حالة الطلب. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
+      });
     } finally {
       setActiveRelationship(null);
     }
@@ -443,7 +483,7 @@ function GuarantorRequestsTab() {
       <div className="grid grid-cols-1 gap-4">
         {requests.map((req) => {
           const insight = insightByRelationship[req.id];
-          const busy = activeRelationship === req.id && (insightMutation.isPending || decisionMutation.isPending);
+          const busy = activeRelationship === req.id && (insightMutation.isPending || decisionMutation.isPending || reviseMutation.isPending);
           return (
             <Card key={req.id}>
               <CardContent className="p-4 space-y-4">
@@ -522,6 +562,20 @@ function GuarantorRequestsTab() {
                     </Button>
                   </div>
                 )}
+
+                {(req.status === 'approved' || req.status === 'rejected') && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => openRevise(req.id, req.status)}
+                    >
+                      {busy && reviseMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <RotateCcw className="w-4 h-4 ml-1" />}
+                      تعديل القرار
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -530,6 +584,47 @@ function GuarantorRequestsTab() {
           <div className="text-center py-12 text-muted-foreground">لا يوجد طلبات كفالة رقمية حتى الآن.</div>
         )}
       </div>
+
+      <Dialog open={reviseTarget != null} onOpenChange={(open) => !open && setReviseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تعديل قرار الكفالة الرقمية</DialogTitle>
+            <DialogDescription>
+              يُستخدم هذا لتصحيح قرار حديث اتُّخذ بالخطأ أو بناءً على معلومات غير محدّثة. سيتم إشعار مقدّم الطلب
+              والكفيل بالتعديل، ولا يمكن تعديل قرار مرّت عليه أكثر من ١٤ يومًا.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium mb-1">الحالة الجديدة</p>
+              <Select value={reviseNewStatus} onValueChange={(value) => setReviseNewStatus(value as GuarantorReviseInputNewStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="approved">الموافقة</SelectItem>
+                  <SelectItem value="rejected">الرفض</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <p className="text-sm font-medium mb-1">سبب التعديل</p>
+              <Textarea
+                placeholder="مثال: تم اتخاذ القرار بناءً على معلومات غير محدّثة."
+                value={reviseReason}
+                onChange={(e) => setReviseReason(e.target.value)}
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviseTarget(null)}>إلغاء</Button>
+            <Button disabled={reviseMutation.isPending} onClick={handleRevise}>
+              {reviseMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "تأكيد التعديل"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

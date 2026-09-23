@@ -1316,7 +1316,10 @@ class GuarantorDecisionBody(BaseModel):
     decision: Literal["approved", "rejected"]
     reason: str | None = None
 
-
+class GuarantorReviseBody(BaseModel):
+    relationship_id: str
+    new_status: Literal["approved", "rejected"]
+    reason: str
 @router.post("/guarantor-decision")
 def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_current_admin)):
     from notifications import notify
@@ -1384,6 +1387,97 @@ def guarantor_decision(body: GuarantorDecisionBody, admin: dict = Depends(get_cu
         "status": body.decision,
     }
 
+@router.post("/guarantor-revise")
+def guarantor_revise(body: GuarantorReviseBody, admin: dict = Depends(get_current_admin)):
+    from notifications import notify
+
+    if not body.reason.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A reason is required when revising a guarantor decision.",
+        )
+
+    db = _get_db()
+    relationship_ref = db.collection("guarantorRelationships").document(body.relationship_id)
+    rel = _get_relationship(db, body.relationship_id)
+    previous_status = rel.get("status")
+
+    if previous_status not in ("approved", "rejected"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This guarantor relationship hasn't received a final decision yet, so there's nothing to revise.",
+        )
+
+    decided_at = rel.get("adminDecisionAt")
+    if isinstance(decided_at, str):
+        try:
+            decided_at = datetime.fromisoformat(decided_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This guarantor decision has an invalid decision timestamp and can't be revised here.",
+            ) from exc
+    if decided_at is None or not hasattr(decided_at, "tzinfo"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This guarantor decision has no decision timestamp and can't be revised here.",
+        )
+    if decided_at.tzinfo is None:
+        decided_at = decided_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - decided_at > _LOAN_DECISION_REVISE_WINDOW:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"This decision was made more than {_LOAN_DECISION_REVISE_WINDOW.days} days ago and "
+                "can no longer be revised here."
+            ),
+        )
+
+    from firebase_admin import firestore
+
+    relationship_ref.update(
+        {
+            "status": body.new_status,
+            "adminDecisionAt": firestore.SERVER_TIMESTAMP,
+            "adminDecisionReason": body.reason.strip(),
+        }
+    )
+
+    requester_uid = rel["requesterUid"]
+    guarantor_uid = rel["guarantorUid"]
+    new_status_label = "الموافقة" if body.new_status == "approved" else "الرفض"
+    message = (
+        f"راجعت الإدارة قرارها السابق بشأن الكفالة الرقمية، وأصبح القرار الآن {new_status_label}. "
+        f"السبب: {body.reason.strip()}"
+    )
+    for uid in (requester_uid, guarantor_uid):
+        notify(
+            db,
+            uid=uid,
+            notif_type="guarantor_admin_revised",
+            title="تم تعديل قرار الكفالة الرقمية",
+            message=message,
+            related_id=body.relationship_id,
+        )
+
+    # The original approval advances a linked application to `submitted`, while
+    # rejection sends it back to `awaiting_guarantor`. Keep that application
+    # state in sync when an admin reverses the guarantor decision.
+    if previous_status != body.new_status and rel.get("applicationId") is not None:
+        import loan_application_store
+
+        try:
+            application_status = "submitted" if body.new_status == "approved" else "awaiting_guarantor"
+            loan_application_store.update_status_by_relationship(body.relationship_id, application_status)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to update loan application linked to revised relationship %s", body.relationship_id)
+
+    return {
+        "relationship_id": body.relationship_id,
+        "requester_uid": requester_uid,
+        "guarantor_uid": guarantor_uid,
+        "status": body.new_status,
+    }
 @router.get("/loan-applications")
 def list_loan_applications(admin: dict = Depends(get_current_admin)):
     import loan_application_store

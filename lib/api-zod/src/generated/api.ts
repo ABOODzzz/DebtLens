@@ -25,7 +25,6 @@ export const submitKycBodyPhotoPathsMin = 3;
 export const submitKycBodyPhotoPathsMax = 3;
 
 
-
 export const SubmitKycBody = zod.object({
   "profile": zod.record(zod.string(), zod.unknown()),
   "photoPaths": zod.array(zod.string()).min(submitKycBodyPhotoPathsMin).max(submitKycBodyPhotoPathsMax)
@@ -502,7 +501,14 @@ export const SubmitGuarantorDecisionResponse = zod.object({
   "status": zod.enum(['approved', 'rejected'])
 })
 
-
+/**
+ * @summary Revise a recently-made final admin decision on a digital guarantor request
+ */
+export const ReviseGuarantorDecisionBody = zod.object({
+  "relationship_id": zod.string(),
+  "new_status": zod.enum(['approved', 'rejected']),
+  "reason": zod.string()
+})
 /**
  * @summary List loan applications awaiting or already given a final admin disbursement decision
  */
@@ -624,3 +630,9 @@ export const SubmitKycDecisionResponse = zod.object({
 })
 
 
+export const ReviseGuarantorDecisionResponse = zod.object({
+  "relationship_id": zod.string(),
+  "requester_uid": zod.string(),
+  "guarantor_uid": zod.string(),
+  "status": zod.enum(['approved', 'rejected'])
+})
