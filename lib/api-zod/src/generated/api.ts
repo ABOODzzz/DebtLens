@@ -531,7 +531,15 @@ export const ListLoanApplicationsResponse = zod.object({
   "updated_at": zod.coerce.date()
 }).and(zod.object({
   "customer_name": zod.string(),
-  "customer_national_id": zod.string().nullish()
+  "customer_national_id": zod.string().nullish(),
+  "decision_history": zod.array(zod.object({
+  "id": zod.number().int(),
+  "application_id": zod.number().int(),
+  "decision": zod.enum(['approved', 'rejected', 'submitted']),
+  "reason": zod.string().nullish(),
+  "admin_uid": zod.string(),
+  "created_at": zod.coerce.date()
+}))
 })))
 })
 

@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw } from "lucide-react";
+import { Loader2, UserCheck, UserX, AlertCircle, Eye, ShieldCheck, Sparkles, ImageOff, Wallet, RotateCcw, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminPage() {
@@ -541,6 +541,12 @@ function loanApplicationStatusBadge(statusValue: string) {
   return { variant: 'secondary' as const, label: 'بانتظار القرار النهائي' };
 }
 
+function loanDecisionHistoryLabel(decision: string) {
+  if (decision === "approved") return "موافقة نهائية";
+  if (decision === "rejected") return "رفض";
+  return "إعادة للمراجعة";
+}
+
 function LoanApplicationsTab() {
   const queryClient = useQueryClient();
   const applicationsQuery = useListLoanApplications();
@@ -688,6 +694,39 @@ function LoanApplicationsTab() {
                   <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-2">
                     سبب الرفض: {app.admin_decision_reason}
                   </p>
+                )}
+
+                {app.decision_history.length > 0 && (
+                  <div className="border border-slate-200 rounded-lg p-3 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                      <History className="w-4 h-4" />
+                      سجل قرارات الإدارة
+                    </div>
+                    <div className="space-y-2">
+                      {app.decision_history.slice().reverse().map((entry, index) => (
+                        <div key={entry.id} className="rounded-md bg-slate-50 p-2 text-sm">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-medium">
+                              {index === app.decision_history.length - 1 ? "القرار الأول" : "تعديل القرار"}:{" "}
+                              {loanDecisionHistoryLabel(entry.decision)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(entry.created_at).toLocaleString("ar-JO", {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1" dir="ltr">
+                            المسؤول: {entry.admin_uid}
+                          </p>
+                          {entry.reason && (
+                            <p className="text-xs text-slate-600 mt-1">السبب: {entry.reason}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {app.status === 'submitted' && (

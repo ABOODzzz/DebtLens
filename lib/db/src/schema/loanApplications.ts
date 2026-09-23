@@ -63,6 +63,23 @@ export const loanApplicationsTable = pgTable("loan_applications", {
     .defaultNow(),
 });
 
+export const loanApplicationDecisionHistoryTable = pgTable(
+  "loan_application_decision_history",
+  {
+    id: serial("id").primaryKey(),
+    applicationId: integer("application_id")
+      .notNull()
+      .references(() => loanApplicationsTable.id, { onDelete: "cascade" }),
+    // approved | rejected | submitted
+    decision: text("decision").notNull(),
+    reason: text("reason"),
+    adminUid: text("admin_uid").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
 export const insertLoanApplicationSchema = createInsertSchema(
   loanApplicationsTable,
 ).omit({ id: true, createdAt: true, updatedAt: true });
@@ -70,3 +87,5 @@ export type InsertLoanApplication = z.infer<
   typeof insertLoanApplicationSchema
 >;
 export type LoanApplication = typeof loanApplicationsTable.$inferSelect;
+export type LoanApplicationDecisionHistory =
+  typeof loanApplicationDecisionHistoryTable.$inferSelect;

@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { LoanApplication } from './loanApplication';
+import type { LoanApplicationDecisionHistoryEntry } from './loanApplicationDecisionHistoryEntry';
 
 export type AdminLoanApplicationSummary = LoanApplication & ({
   customer_name: string;
   /** @nullable */
   customer_national_id?: string | null;
+  decision_history: LoanApplicationDecisionHistoryEntry[];
 });

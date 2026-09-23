@@ -1403,6 +1403,7 @@ def list_loan_applications(admin: dict = Depends(get_current_admin)):
                     **application,
                     "customer_name": name,
                     "customer_national_id": national_id,
+                    "decision_history": loan_application_store.list_decision_history(application["id"]),
                 }
             )
 
@@ -1501,7 +1502,12 @@ def loan_application_decision(body: LoanApplicationDecisionBody, admin: dict = D
         )
 
     new_status = "approved" if body.decision == "approved" else "admin_rejected"
-    updated = loan_application_store.update_admin_decision(body.application_id, new_status, body.reason)
+    updated = loan_application_store.update_admin_decision(
+        body.application_id,
+        new_status,
+        body.reason,
+        admin["uid"],
+    )
     if updated is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1610,7 +1616,12 @@ def loan_application_revise(body: LoanApplicationReviseBody, admin: dict = Depen
         )
 
     target_status = "admin_rejected" if body.new_status == "rejected" else body.new_status
-    updated = loan_application_store.revise_admin_decision(body.application_id, target_status, body.reason)
+    updated = loan_application_store.revise_admin_decision(
+        body.application_id,
+        target_status,
+        body.reason,
+        admin["uid"],
+    )
     if updated is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

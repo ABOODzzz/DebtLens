@@ -50,6 +50,38 @@ def _row_to_dict(row: dict) -> dict:
     }
 
 
+def _decision_history_row_to_dict(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "application_id": row["application_id"],
+        "decision": row["decision"],
+        "reason": row["reason"],
+        "admin_uid": row["admin_uid"],
+        "created_at": row["created_at"].isoformat(),
+    }
+
+
+def list_decision_history(application_id: int) -> list[dict]:
+    """Return the immutable admin decisions for an application, oldest first."""
+    with psycopg2.connect(_database_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, application_id, decision, reason, admin_uid, created_at
+                FROM loan_application_decision_history
+                WHERE application_id = %s
+                ORDER BY created_at ASC, id ASC
+                """,
+                (application_id,),
+            )
+            rows = cur.fetchall()
+    return [_decision_history_row_to_dict(row) for row in rows]
+
+
+def _history_decision_for_status(status_value: str) -> str:
+    return "rejected" if status_value == "admin_rejected" else status_value
+
+
 def insert_loan_application(uid: str, requested_amount: float, purpose: str, snapshot: dict) -> dict:
     """
     Insert a new loan application row from an assessment snapshot (see
@@ -168,7 +200,12 @@ def update_status_by_relationship(relationship_id: str, status: str) -> dict | N
     return _row_to_dict(row) if row else None
 
 
-def revise_admin_decision(application_id: int, new_status: str, reason: str) -> dict | None:
+def revise_admin_decision(
+    application_id: int,
+    new_status: str,
+    reason: str,
+    admin_uid: str,
+) -> dict | None:
     """
     Overwrite an already-decided application's terminal state (`approved` or
     `admin_rejected`) with a corrected one -- for an admin walking back a
@@ -190,11 +227,30 @@ def revise_admin_decision(application_id: int, new_status: str, reason: str) -> 
                 (new_status, reason, application_id),
             )
             row = cur.fetchone()
+            if row:
+                cur.execute(
+                    """
+                    INSERT INTO loan_application_decision_history
+                        (application_id, decision, reason, admin_uid)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        application_id,
+                        _history_decision_for_status(new_status),
+                        reason,
+                        admin_uid,
+                    ),
+                )
         conn.commit()
     return _row_to_dict(row) if row else None
 
 
-def update_admin_decision(application_id: int, status_value: str, reason: str | None) -> dict | None:
+def update_admin_decision(
+    application_id: int,
+    status_value: str,
+    reason: str | None,
+    admin_uid: str,
+) -> dict | None:
     """
     Record the admin's final disbursement decision on a `submitted`
     application, moving it to a terminal state (`approved` or
@@ -213,5 +269,19 @@ def update_admin_decision(application_id: int, status_value: str, reason: str | 
                 (status_value, reason, application_id),
             )
             row = cur.fetchone()
+            if row:
+                cur.execute(
+                    """
+                    INSERT INTO loan_application_decision_history
+                        (application_id, decision, reason, admin_uid)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        application_id,
+                        _history_decision_for_status(status_value),
+                        reason,
+                        admin_uid,
+                    ),
+                )
         conn.commit()
     return _row_to_dict(row) if row else None

@@ -70,6 +70,7 @@ def _application_row(app_id: int, status_value: str = "submitted", updated_at: s
 class FakeAdminLoanApplicationStore:
     def __init__(self, rows: dict[int, dict]):
         self._rows = rows
+        self.history: dict[int, list[dict]] = {application_id: [] for application_id in rows}
 
     def list_applications_by_status(self, status_value):
         return [row for row in self._rows.values() if row["status"] == status_value]
@@ -77,20 +78,43 @@ class FakeAdminLoanApplicationStore:
     def get_loan_application(self, application_id):
         return self._rows.get(application_id)
 
-    def update_admin_decision(self, application_id, status_value, reason):
+    def list_decision_history(self, application_id):
+        return self.history.setdefault(application_id, [])
+
+    def update_admin_decision(self, application_id, status_value, reason, admin_uid):
         row = self._rows.get(application_id)
         if row is None or row["status"] != "submitted":
             return None
         row = {**row, "status": status_value, "admin_decision_reason": reason}
         self._rows[application_id] = row
+        self.history.setdefault(application_id, []).append(
+            {
+                "id": len(self.history[application_id]) + 1,
+                "application_id": application_id,
+                "decision": "rejected" if status_value == "admin_rejected" else status_value,
+                "reason": reason,
+                "admin_uid": admin_uid,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         return row
 
-    def revise_admin_decision(self, application_id, new_status, reason):
+    def revise_admin_decision(self, application_id, new_status, reason, admin_uid):
         row = self._rows.get(application_id)
         if row is None or row["status"] not in ("approved", "admin_rejected"):
             return None
         row = {**row, "status": new_status, "admin_decision_reason": reason}
         self._rows[application_id] = row
+        self.history.setdefault(application_id, []).append(
+            {
+                "id": len(self.history[application_id]) + 1,
+                "application_id": application_id,
+                "decision": "rejected" if new_status == "admin_rejected" else new_status,
+                "reason": reason,
+                "admin_uid": admin_uid,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         return row
 
 
@@ -189,6 +213,7 @@ class TestAdminLoanApplicationEndpoints:
         # real loan_application_store module object those inline imports
         # resolve to. Same reasoning for notifications.notify.
         monkeypatch.setattr(loan_application_store, "list_applications_by_status", self.fake_store.list_applications_by_status)
+        monkeypatch.setattr(loan_application_store, "list_decision_history", self.fake_store.list_decision_history)
         monkeypatch.setattr(loan_application_store, "get_loan_application", self.fake_store.get_loan_application)
         monkeypatch.setattr(loan_application_store, "update_admin_decision", self.fake_store.update_admin_decision)
         monkeypatch.setattr(loan_application_store, "revise_admin_decision", self.fake_store.revise_admin_decision)
@@ -209,6 +234,7 @@ class TestAdminLoanApplicationEndpoints:
         assert data["applications"][0]["id"] == 1
         assert data["applications"][0]["customer_name"] == "أحمد الزعبي"
         assert data["applications"][0]["status"] == "submitted"
+        assert data["applications"][0]["decision_history"] == []
 
     def test_approve_moves_application_to_terminal_state(self, monkeypatch, openapi_spec):
         client = self._client(monkeypatch)
@@ -223,6 +249,8 @@ class TestAdminLoanApplicationEndpoints:
         _validate_against_schema(data, "LoanApplication", openapi_spec)
         assert data["status"] == "approved"
         assert self.rows[1]["status"] == "approved"
+        assert self.fake_store.history[1][0]["decision"] == "approved"
+        assert self.fake_store.history[1][0]["admin_uid"] == ADMIN_UID
 
     def test_reject_records_reason_and_terminal_state(self, monkeypatch, openapi_spec):
         client = self._client(monkeypatch)
@@ -383,6 +411,8 @@ class TestAdminLoanApplicationRevise:
         assert data["status"] == "admin_rejected"
         assert data["admin_decision_reason"] == "تمت الموافقة بالخطأ على طلب آخر"
         assert self.rows[1]["status"] == "admin_rejected"
+        assert self.fake_store.history[1][0]["decision"] == "rejected"
+        assert self.fake_store.history[1][0]["admin_uid"] == ADMIN_UID
         assert any(n["uid"] == CUSTOMER_UID and n["notif_type"] == "loan_application_revised" for n in self.notified)
 
     def test_revise_notifies_backing_guarantor_too(self, monkeypatch):

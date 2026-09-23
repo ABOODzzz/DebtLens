@@ -582,10 +582,30 @@ export interface GuarantorDecisionResult {
   status: GuarantorDecisionResultStatus;
 }
 
+export type LoanApplicationDecisionHistoryEntryDecision = typeof LoanApplicationDecisionHistoryEntryDecision[keyof typeof LoanApplicationDecisionHistoryEntryDecision];
+
+
+export const LoanApplicationDecisionHistoryEntryDecision = {
+  approved: 'approved',
+  rejected: 'rejected',
+  submitted: 'submitted',
+} as const;
+
+export interface LoanApplicationDecisionHistoryEntry {
+  id: number;
+  application_id: number;
+  decision: LoanApplicationDecisionHistoryEntryDecision;
+  /** @nullable */
+  reason?: string | null;
+  admin_uid: string;
+  created_at: string;
+}
+
 export type AdminLoanApplicationSummary = LoanApplication & ({
   customer_name: string;
   /** @nullable */
   customer_national_id?: string | null;
+  decision_history: LoanApplicationDecisionHistoryEntry[];
 });
 
 export interface AdminLoanApplicationsList {

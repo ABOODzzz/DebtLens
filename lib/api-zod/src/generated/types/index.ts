@@ -63,6 +63,8 @@ export * from './kycSubmitInputProfile';
 export * from './kycSubmitResponse';
 export * from './kycSubmitResponseReviewStatus';
 export * from './loanApplication';
+export * from './loanApplicationDecisionHistoryEntry';
+export * from './loanApplicationDecisionHistoryEntryDecision';
 export * from './loanApplicationDecisionInput';
 export * from './loanApplicationDecisionInputDecision';
 export * from './loanApplicationInput';

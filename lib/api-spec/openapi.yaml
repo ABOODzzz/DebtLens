@@ -1777,11 +1777,39 @@ components:
         - type: object
           required:
             - customer_name
+            - decision_history
           properties:
             customer_name:
               type: string
             customer_national_id:
               type: ["string", "null"]
+            decision_history:
+              type: array
+              items:
+                $ref: "#/components/schemas/LoanApplicationDecisionHistoryEntry"
+    LoanApplicationDecisionHistoryEntry:
+      type: object
+      required:
+        - id
+        - application_id
+        - decision
+        - admin_uid
+        - created_at
+      properties:
+        id:
+          type: integer
+        application_id:
+          type: integer
+        decision:
+          type: string
+          enum: [approved, rejected, submitted]
+        reason:
+          type: ["string", "null"]
+        admin_uid:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     AdminLoanApplicationsList:
       type: object
       required:
