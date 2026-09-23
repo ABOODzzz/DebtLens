@@ -466,6 +466,12 @@ components:
           type: boolean
         hasMultipleFinancingInstitutions:
           type: boolean
+        dataSource:
+          type: string
+          description: >
+            Whether these figures come from admin-verified statements,
+            self-reported onboarding data, or nothing yet.
+          enum: [verified, self_reported, none]
     AnalyzeInput:
       type: object
       required:

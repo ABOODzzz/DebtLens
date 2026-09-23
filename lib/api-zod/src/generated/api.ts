@@ -60,7 +60,8 @@ export const GetFinancialSummaryResponse = zod.object({
   "financingInstitutionsCount": zod.number().int(),
   "debtToIncomeRatio": zod.number(),
   "hasActiveLoans": zod.boolean(),
-  "hasMultipleFinancingInstitutions": zod.boolean()
+  "hasMultipleFinancingInstitutions": zod.boolean(),
+  "dataSource": zod.enum(['verified', 'self_reported', 'none']).optional().describe('Whether these figures come from admin-verified statements, self-reported onboarding data, or nothing yet.\n')
 })
 
 

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FinancialSummaryDataSource } from './financialSummaryDataSource';
 
 export interface FinancialSummary {
   totalMonthlyIncome: number;
@@ -15,4 +16,6 @@ export interface FinancialSummary {
   debtToIncomeRatio: number;
   hasActiveLoans: boolean;
   hasMultipleFinancingInstitutions: boolean;
+  /** Whether these figures come from admin-verified statements, self-reported onboarding data, or nothing yet. */
+  dataSource?: FinancialSummaryDataSource;
 }

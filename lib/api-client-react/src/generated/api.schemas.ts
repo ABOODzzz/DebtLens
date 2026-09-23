@@ -47,6 +47,18 @@ export interface Headline {
   publishedAt: string;
 }
 
+/**
+ * Whether these figures come from admin-verified statements, self-reported onboarding data, or nothing yet.
+ */
+export type FinancialSummaryDataSource = typeof FinancialSummaryDataSource[keyof typeof FinancialSummaryDataSource];
+
+
+export const FinancialSummaryDataSource = {
+  verified: 'verified',
+  self_reported: 'self_reported',
+  none: 'none',
+} as const;
+
 export interface FinancialSummary {
   totalMonthlyIncome: number;
   totalMonthlyDebtPayments: number;
@@ -56,6 +68,8 @@ export interface FinancialSummary {
   debtToIncomeRatio: number;
   hasActiveLoans: boolean;
   hasMultipleFinancingInstitutions: boolean;
+  /** Whether these figures come from admin-verified statements, self-reported onboarding data, or nothing yet. */
+  dataSource?: FinancialSummaryDataSource;
 }
 
 export type AnalyzeInputType = typeof AnalyzeInputType[keyof typeof AnalyzeInputType];

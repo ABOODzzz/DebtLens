@@ -19,6 +19,7 @@ export * from './consolidationRequestResultStatus';
 export * from './debtBreakdownItem';
 export * from './errorResponse';
 export * from './financialSummary';
+export * from './financialSummaryDataSource';
 export * from './guarantorRequestStatus';
 export * from './guarantorRequestStatusStatus';
 export * from './guarantorStatus';

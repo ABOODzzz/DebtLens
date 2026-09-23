@@ -694,15 +694,30 @@ def ai_loan_assessment(user: dict = Depends(get_current_user)):
 
 @router.get("/financial-summary")
 def financial_summary(user: dict = Depends(get_current_user)):
+    """
+    Always returns a fully-populated FinancialSummary, whatever the user's
+    data_source is. A brand-new account (no admin-uploaded statements yet,
+    "self_reported" or "none") simply has no active institutions yet, so the
+    debt figures come back as honest zeros instead of a placeholder shape --
+    this endpoint's response must satisfy the FinancialSummary schema on
+    every call, since the dashboard renders it unconditionally.
+    """
     profile = _load_profile(user["uid"])
 
-    if profile["data_source"] != "verified":
-        return _awaiting_verification_response()
-
     active_institutions = _active_institutions(profile)
+    total_remaining_debt = sum(i["remaining_balance"] for i in active_institutions)
+    total_monthly_debt_payments = sum(i["monthly_installment"] for i in active_institutions)
+    monthly_income = profile["profile"]["monthly_income"]
+    debt_to_income_ratio = profile["debt_to_income_percentage"] or 0.0
 
     return {
-        "awaiting_verification": False,
-        "has_active_loans": len(active_institutions) > 0,
-        "financing_institutions_count": len(active_institutions),
+        "totalMonthlyIncome": round(monthly_income, 2),
+        "totalMonthlyDebtPayments": round(total_monthly_debt_payments, 2),
+        "totalRemainingDebt": round(total_remaining_debt, 2),
+        "activeLoansCount": len(active_institutions),
+        "financingInstitutionsCount": profile["financing_institutions_with_balance"],
+        "debtToIncomeRatio": round(debt_to_income_ratio, 2),
+        "hasActiveLoans": len(active_institutions) > 0,
+        "hasMultipleFinancingInstitutions": profile["stacking_flag"],
+        "dataSource": profile["data_source"],
     }

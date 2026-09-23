@@ -63,6 +63,7 @@ function DashboardContent() {
   }
 
   const summary = summaryQuery.data;
+  const isVerified = summary.dataSource === "verified";
 
   return (
     <div className="flex-1 bg-muted/10 pb-12">
@@ -81,7 +82,16 @@ function DashboardContent() {
       </div>
 
       <div className="container mx-auto max-w-6xl px-4 mt-8 space-y-8">
-        
+
+        {!isVerified && (
+          <div className="flex items-start gap-3 bg-secondary/10 border border-secondary/30 rounded-lg p-4 text-sm">
+            <AlertCircle className="w-5 h-5 text-secondary flex-shrink-0 mt-0.5" />
+            <p className="text-muted-foreground">
+              الأرقام أدناه مبنية على بياناتك المُدخلة عند التسجيل فقط. ستظهر أرقام دقيقة بعد رفع كشوفات حساباتك أو قروضك ومراجعتها.
+            </p>
+          </div>
+        )}
+
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard title="الدخل الشهري" value={summary.totalMonthlyIncome} unit="د.أ" />
