@@ -1,5 +1,5 @@
 # DebtLens
-for Fintech Jo 2026\n 
+**for Fintech Jo 2026** 
 **An AI-powered personal debt management and loan eligibility platform for people in Jordan.**
 
 ## Live Demo
